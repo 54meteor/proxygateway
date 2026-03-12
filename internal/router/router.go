@@ -26,13 +26,18 @@ func Setup(
 	// 健康检查
 	r.GET("/health", gatewayHandler.HealthCheck)
 
-	// 管理后台
+	// 登录接口（Pure Admin）
+	r.POST("/login", gatewayHandler.Login)
+	r.POST("/refreshToken", gatewayHandler.RefreshToken)
+	r.GET("/get-async-routes", gatewayHandler.GetAsyncRoutes)
+
+	// 管理后台 API（Pure Admin 前端调用）
 	adminGroup := r.Group("/admin")
 	{
-		adminGroup.GET("/", adminHandler.Dashboard)
-		adminGroup.GET("/users", adminHandler.Users)
-		adminGroup.GET("/keys", adminHandler.Keys)
-		adminGroup.GET("/usage", adminHandler.Usage)
+		adminGroup.GET("/", adminHandler.DashboardAPI)
+		adminGroup.GET("/users", adminHandler.UsersAPI)
+		adminGroup.GET("/keys", adminHandler.KeysAPI)
+		adminGroup.GET("/usage", adminHandler.UsageAPI)
 		
 		// 管理 API
 		adminGroup.POST("/api/user/recharge", adminHandler.Recharge)
@@ -40,6 +45,12 @@ func Setup(
 		adminGroup.POST("/api/key/toggle", adminHandler.ToggleKey)
 		adminGroup.POST("/api/key/delete", adminHandler.DeleteKey)
 	}
+
+	// 旧版管理后台 HTML（保留）
+	r.GET("/admin-dashboard", adminHandler.Dashboard)
+	r.GET("/admin-users", adminHandler.Users)
+	r.GET("/admin-keys", adminHandler.Keys)
+	r.GET("/admin-usage", adminHandler.Usage)
 
 	// 调试接口（仅开发环境使用）
 	r.POST("/debug/init", gatewayHandler.InitUser)           // 初始化测试用户

@@ -285,7 +285,7 @@ func (h *AdminHandler) getUsageStats(startDate, endDate, userID string) ([]map[s
 		
 		emailDisplay := email
 		if emailDisplay == "" {
-			emailDisplay = uid[:8]
+			emailDisplay = safeSubstr(uid, 8)
 		} else {
 			// 截取邮箱前缀
 			for i := range emailDisplay {
@@ -297,9 +297,9 @@ func (h *AdminHandler) getUsageStats(startDate, endDate, userID string) ([]map[s
 		}
 		
 		usage = append(usage, map[string]interface{}{
-			"UserID":      uid[:8],
+			"UserID":      safeSubstr(uid, 8),
 			"UserEmail":   emailDisplay,
-			"APIKeyID":   aid[:8],
+			"APIKeyID":   safeSubstr(aid, 8),
 			"Model":       model,
 			"PromptTokens": prompt,
 			"CompletionTokens": completion,
@@ -338,5 +338,50 @@ func (h *AdminHandler) getUsageStats(startDate, endDate, userID string) ([]map[s
 func Init() {
 	filepath.Walk("templates", func(path string, info os.FileInfo, err error) error {
 		return nil
+	})
+}
+
+// 安全截断字符串
+func safeSubstr(s string, maxLen int) string {
+	if len(s) == 0 {
+		return ""
+	}
+	if len(s) > maxLen {
+		return s[:maxLen]
+	}
+	return s
+}
+
+// ============ JSON API ============
+
+// DashboardAPI 仪表盘 JSON
+func (h *AdminHandler) DashboardAPI(c *gin.Context) {
+	stats := h.getStats()
+	c.JSON(200, stats)
+}
+
+// UsersAPI 用户列表 JSON
+func (h *AdminHandler) UsersAPI(c *gin.Context) {
+	users := h.getAllUsers()
+	c.JSON(200, users)
+}
+
+// KeysAPI API Keys JSON
+func (h *AdminHandler) KeysAPI(c *gin.Context) {
+	keys := h.getAllKeys()
+	c.JSON(200, keys)
+}
+
+// UsageAPI 用量统计 JSON
+func (h *AdminHandler) UsageAPI(c *gin.Context) {
+	startDate := c.DefaultQuery("start", time.Now().AddDate(0, 0, -7).Format("2006-01-02"))
+	endDate := c.DefaultQuery("end", time.Now().Format("2006-01-02"))
+	userID := c.Query("user")
+	
+	usage, stats := h.getUsageStats(startDate, endDate, userID)
+	
+	c.JSON(200, gin.H{
+		"Usage": usage,
+		"Stats": stats,
 	})
 }
