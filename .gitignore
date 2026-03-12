@@ -1,0 +1,22 @@
+# 二进制文件
+server
+server.exe
+*.exe
+
+# 数据库
+*.db
+*.db-journal
+
+# 日志
+logs/
+*.log
+gateway.log
+nohup.out
+
+# 环境变量
+.env
+
+# IDE
+.idea/
+.vscode/
+*.swp

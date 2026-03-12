@@ -1,0 +1,67 @@
+// Package router 路由配置包
+// 设置所有 HTTP 路由和中间件
+package router
+
+import (
+	"ai-gateway/internal/admin"
+	"ai-gateway/internal/handler"
+	"ai-gateway/internal/middleware"
+	"ai-gateway/internal/service/auth"
+
+	"github.com/gin-gonic/gin"
+)
+
+// Setup 设置路由
+// 配置所有 HTTP 端点和中间件
+func Setup(
+	r *gin.Engine,
+	gatewayHandler *handler.GatewayHandler,
+	authService *auth.AuthService,
+	adminHandler *admin.AdminHandler,
+) {
+	// 全局中间件 - CORS
+	r.Use(middleware.CORSMiddleware())
+
+	// 公开接口
+	// 健康检查
+	r.GET("/health", gatewayHandler.HealthCheck)
+
+	// 管理后台
+	adminGroup := r.Group("/admin")
+	{
+		adminGroup.GET("/", adminHandler.Dashboard)
+		adminGroup.GET("/users", adminHandler.Users)
+		adminGroup.GET("/keys", adminHandler.Keys)
+		adminGroup.GET("/usage", adminHandler.Usage)
+		
+		// 管理 API
+		adminGroup.POST("/api/user/recharge", adminHandler.Recharge)
+		adminGroup.POST("/api/user/reset", adminHandler.ResetBalance)
+		adminGroup.POST("/api/key/toggle", adminHandler.ToggleKey)
+		adminGroup.POST("/api/key/delete", adminHandler.DeleteKey)
+	}
+
+	// 调试接口（仅开发环境使用）
+	r.POST("/debug/init", gatewayHandler.InitUser)           // 初始化测试用户
+	r.GET("/debug/keys", gatewayHandler.DebugListAllKeys)    // 列出所有 Keys
+	r.GET("/debug/check", gatewayHandler.DebugCheckKey)      // 检查指定 Key
+
+	// API v1 路由组
+	v1 := r.Group("/v1")
+	{
+		// 公开接口
+		v1.GET("/models", gatewayHandler.ListModels) // 模型列表
+
+		// 需要认证的接口
+		protected := v1.Group("")
+		protected.Use(middleware.APIKeyAuth(authService))
+		{
+			// 聊天接口（兼容 OpenAI）
+			protected.POST("/chat/completions", gatewayHandler.ChatComplete)
+			// 用户用量查询
+			protected.GET("/usage", gatewayHandler.GetUserUsage)
+			// 创建 API Key
+			protected.POST("/keys", gatewayHandler.CreateAPIKey)
+		}
+	}
+}
