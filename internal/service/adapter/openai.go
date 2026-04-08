@@ -82,3 +82,7 @@ func (a *OpenAIAdapter) Embeddings(req model.EmbeddingRequest) (*model.Embedding
 func (a *OpenAIAdapter) GetModelName() string {
 	return "openai"
 }
+
+func (a *OpenAIAdapter) Images(req model.ImageRequest) (*model.ImageResponse, error) {
+	return nil, fmt.Errorf("openai images not implemented in this adapter")
+}

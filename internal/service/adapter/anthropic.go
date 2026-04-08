@@ -83,3 +83,7 @@ func (a *AnthropicAdapter) Embeddings(req model.EmbeddingRequest) (*model.Embedd
 func (a *AnthropicAdapter) GetModelName() string {
 	return "anthropic"
 }
+
+func (a *AnthropicAdapter) Images(req model.ImageRequest) (*model.ImageResponse, error) {
+	return nil, fmt.Errorf("anthropic images not implemented")
+}

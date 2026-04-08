@@ -95,6 +95,7 @@ func setupTestEnv(t *testing.T) (*GatewayHandler, *storage.DB, *gin.Engine) {
 	})
 	protected.POST("/chat/completions", handler.ChatComplete)
 	protected.POST("/embeddings", handler.Embeddings)
+	protected.POST("/images/generations", handler.Images)
 	protected.POST("/audio/transcriptions", handler.AudioTranscriptions)
 	protected.GET("/usage", handler.GetUserUsage)
 	protected.POST("/keys", handler.CreateAPIKey)
@@ -537,4 +538,76 @@ func TestWord_Structure(t *testing.T) {
 	assert.Equal(t, "test", word.Word)
 	assert.Equal(t, 1.5, word.Start)
 	assert.Equal(t, 2.0, word.End)
+}
+
+// ============ Images API 测试 ============
+
+func TestImages_Unauthorized(t *testing.T) {
+	_, _, engine := setupTestEnv(t)
+
+	body := map[string]interface{}{
+		"model":   "MiniMax-Image-01",
+		"prompt":  "A beautiful sunset",
+		"n":       1,
+		"size":    "1024x1024",
+	}
+	jsonBody, _ := json.Marshal(body)
+
+	req := httptest.NewRequest("POST", "/v1/images/generations", bytes.NewReader(jsonBody))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+}
+
+func TestImageRequest_Validation(t *testing.T) {
+	req := model.ImageRequest{
+		Model:  "MiniMax-Image-01",
+		Prompt: "A beautiful sunset",
+		N:      2,
+		Size:   "1024x1024",
+	}
+
+	assert.Equal(t, "MiniMax-Image-01", req.Model)
+	assert.Equal(t, "A beautiful sunset", req.Prompt)
+	assert.Equal(t, 2, req.N)
+	assert.Equal(t, "1024x1024", req.Size)
+}
+
+func TestImageResponse_Fields(t *testing.T) {
+	resp := model.ImageResponse{
+		ID:      "img-1234567890",
+		Object:  "image",
+		Created: int64(1234567890),
+		Model:   "MiniMax-Image-01",
+		Data: []model.ImageData{
+			{
+				Object: "image",
+				URL:    "https://example.com/image1.png",
+			},
+			{
+				Object: "image",
+				URL:    "https://example.com/image2.png",
+			},
+		},
+	}
+
+	assert.Equal(t, "img-1234567890", resp.ID)
+	assert.Equal(t, "image", resp.Object)
+	assert.Equal(t, int64(1234567890), resp.Created)
+	assert.Equal(t, "MiniMax-Image-01", resp.Model)
+	assert.Len(t, resp.Data, 2)
+	assert.Equal(t, "https://example.com/image1.png", resp.Data[0].URL)
+	assert.Equal(t, "https://example.com/image2.png", resp.Data[1].URL)
+}
+
+func TestImageData_Structure(t *testing.T) {
+	data := model.ImageData{
+		Object: "image",
+		URL:    "https://example.com/test.png",
+	}
+
+	assert.Equal(t, "image", data.Object)
+	assert.Equal(t, "https://example.com/test.png", data.URL)
 }

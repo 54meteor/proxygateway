@@ -160,6 +160,96 @@ func (a *MiniMaxAdapter) GetModelName() string {
 	return "MiniMax-M2.5"
 }
 
+// Images 处理图片生成请求
+// 1. 构造 MiniMax Images API 请求
+// 2. 发送 HTTP 请求
+// 3. 解析响应并转换格式
+func (a *MiniMaxAdapter) Images(req model.ImageRequest) (*model.ImageResponse, error) {
+	// 1. 构建 API URL
+	url := a.cfg.Models.MiniMax.BaseURL + "/images/generations"
+
+	// 2. 构造请求体
+	body := map[string]interface{}{
+		"model":    req.Model,
+		"prompt":   req.Prompt,
+	}
+	if req.N > 0 {
+		body["n"] = req.N
+	} else {
+		body["n"] = 1
+	}
+	if req.Size != "" {
+		body["size"] = req.Size
+	}
+
+	// 序列化为 JSON
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+
+	// 3. 创建 HTTP 请求
+	httpReq, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return nil, err
+	}
+
+	// 设置请求头
+	httpReq.Header.Set("Authorization", "Bearer "+a.cfg.Models.MiniMax.APIKey)
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	// 4. 发送请求（带超时）
+	client := &http.Client{Timeout: time.Duration(a.cfg.Models.MiniMax.Timeout) * time.Second}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	// 5. 读取响应体
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	// 6. 检查响应状态码
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("error: status code %d, body: %s", resp.StatusCode, string(respBody))
+	}
+
+	// 7. 解析 JSON 响应
+	var result map[string]interface{}
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, err
+	}
+
+	// 8. 转换为 OpenAI 格式的响应
+	now := time.Now().Unix()
+	response := &model.ImageResponse{
+		ID:      fmt.Sprintf("img-%d", now),
+		Object:  "image",
+		Created: now,
+		Model:   req.Model,
+		Data:    []model.ImageData{},
+	}
+
+	// 解析 data 数组
+	if data, ok := result["data"].([]interface{}); ok {
+		for _, item := range data {
+			itemMap := item.(map[string]interface{})
+			imageData := model.ImageData{
+				Object: "image",
+			}
+			if url, ok := itemMap["url"].(string); ok {
+				imageData.URL = url
+			}
+			response.Data = append(response.Data, imageData)
+		}
+	}
+
+	return response, nil
+}
+
 // Embeddings 处理文本向量化请求
 // 1. 构造 MiniMax Embeddings API 请求
 // 2. 发送 HTTP 请求
