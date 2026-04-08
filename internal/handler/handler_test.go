@@ -50,7 +50,8 @@ func setupTestEnv(t *testing.T) (*GatewayHandler, *storage.DB, *gin.Engine) {
 			},
 		},
 		Pricing: config.PricingConfig{
-			"MiniMax-M2.5": {Prompt: 0.01, Completion: 0.01},
+			"MiniMax-M2.5":    {Prompt: 0.01, Completion: 0.01},
+			"MiniMax-Text-01": {Prompt: 0.01, Completion: 0.01},
 		},
 	}
 
@@ -412,4 +413,33 @@ func TestEmbeddingUsage_Structure(t *testing.T) {
 
 	assert.Equal(t, 10, usage.PromptTokens)
 	assert.Equal(t, 10, usage.TotalTokens)
+}
+
+// ============ Embeddings E2E 测试 ============
+
+func TestEmbeddings_E2E(t *testing.T) {
+	h, _, engine := setupTestEnv(t)
+
+	// 创建测试用户和 API Key
+	user, err := h.authService.CreateTestUser()
+	require.NoError(t, err)
+	apiKey, err := h.authService.GenerateAPIKey(user.ID, "embeddings-test")
+	require.NoError(t, err)
+
+	body := map[string]interface{}{
+		"model":           "MiniMax-Text-01",
+		"input":           []string{"Hello world", "Testing embeddings"},
+		"encoding_format": "float",
+	}
+	jsonBody, _ := json.Marshal(body)
+
+	req := httptest.NewRequest("POST", "/v1/embeddings", bytes.NewReader(jsonBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+
+	// 验证响应：MiniMax API 可能返回成功或错误，但不应该是认证/请求错误
+	assert.NotEqual(t, http.StatusUnauthorized, rec.Code)
+	assert.NotEqual(t, http.StatusBadRequest, rec.Code)
 }

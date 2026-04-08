@@ -228,7 +228,7 @@ func (h *GatewayHandler) Embeddings(c *gin.Context) {
 
 	// 设置默认值
 	if req.Model == "" {
-		req.Model = "embedding-model"
+		req.Model = "MiniMax-Text-01"
 	}
 	if req.EncodingFormat == "" {
 		req.EncodingFormat = "float"
@@ -241,8 +241,12 @@ func (h *GatewayHandler) Embeddings(c *gin.Context) {
 		return
 	}
 
-	// 获取用户信息
+	// 从 Context 获取用户和 API Key ID
 	userIDStr := c.GetString("user_id")
+	apiKeyIDStr := c.GetString("api_key_id")
+
+	userID, _ := uuid.Parse(userIDStr)
+	apiKeyID, _ := uuid.Parse(apiKeyIDStr)
 
 	// 调用 Embeddings
 	resp, err := adapter.Embeddings(req)
@@ -252,7 +256,25 @@ func (h *GatewayHandler) Embeddings(c *gin.Context) {
 		return
 	}
 
-	logger.Info("Embeddings: userID=%s, model=%s, inputCount=%d", userIDStr, req.Model, len(req.Input))
+	// 构造计费请求（复用 ChatRequest 以调用 RecordUsage）
+	chatReq := model.ChatRequest{Model: req.Model}
+	chatResp := &model.ChatResponse{
+		Model: resp.Model,
+		Usage: model.Usage{
+			PromptTokens:     resp.Usage.PromptTokens,
+			CompletionTokens: 0,
+			TotalTokens:      resp.Usage.TotalTokens,
+		},
+	}
+
+	// 记录使用量并扣费
+	if err := h.billingService.RecordUsage(userID, apiKeyID, chatReq, chatResp); err != nil {
+		logger.Error("Billing Error: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "billing failed: " + err.Error()})
+		return
+	}
+
+	logger.Info("Embeddings: userID=%s, model=%s, inputCount=%d, promptTokens=%d", userIDStr, req.Model, len(req.Input), resp.Usage.PromptTokens)
 
 	c.JSON(http.StatusOK, resp)
 }

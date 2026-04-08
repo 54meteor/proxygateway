@@ -26,6 +26,21 @@ func NewMiniMaxAdapter(cfg *config.Config) *MiniMaxAdapter {
 	}
 }
 
+// cleanThinking 清理思维链标签
+// MiniMax 返回的内容可能包含 <think> 思考标签，需要清理
+func cleanThinking(content string) string {
+	// 移除 <think> 思考标签及其内容
+	content = strings.ReplaceAll(content, "<think>\n", "")
+	content = strings.ReplaceAll(content, "</think>\n", "")
+	content = strings.ReplaceAll(content, "<think>", "")
+	content = strings.ReplaceAll(content, "</think>", "")
+	// 清理多余空行
+	for strings.Contains(content, "\n\n\n") {
+		content = strings.ReplaceAll(content, "\n\n\n", "\n\n")
+	}
+	return strings.TrimSpace(content)
+}
+
 // ChatComplete 处理聊天完成请求
 // 1. 构造 MiniMax API 请求
 // 2. 发送 HTTP 请求
@@ -33,7 +48,7 @@ func NewMiniMaxAdapter(cfg *config.Config) *MiniMaxAdapter {
 func (a *MiniMaxAdapter) ChatComplete(req model.ChatRequest) (*model.ChatResponse, error) {
 	// 1. 构建 API URL
 	url := a.cfg.Models.MiniMax.BaseURL + "/chat/completions"
-	
+
 	// 2. 转换消息格式（适配 MiniMax API）
 	messages := make([]map[string]interface{}, len(req.Messages))
 	for i, msg := range req.Messages {
@@ -42,13 +57,13 @@ func (a *MiniMaxAdapter) ChatComplete(req model.ChatRequest) (*model.ChatRespons
 			"content": msg.Content,
 		}
 	}
-	
+
 	// 3. 构造请求体
 	body := map[string]interface{}{
 		"model":    req.Model,
 		"messages": messages,
 	}
-	
+
 	// 添加可选参数
 	if req.Temperature > 0 {
 		body["temperature"] = req.Temperature
@@ -56,23 +71,23 @@ func (a *MiniMaxAdapter) ChatComplete(req model.ChatRequest) (*model.ChatRespons
 	if req.MaxTokens > 0 {
 		body["max_tokens"] = req.MaxTokens
 	}
-	
+
 	// 序列化为 JSON
 	jsonBody, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// 4. 创建 HTTP 请求
 	httpReq, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// 设置请求头
 	httpReq.Header.Set("Authorization", "Bearer "+a.cfg.Models.MiniMax.APIKey)
 	httpReq.Header.Set("Content-Type", "application/json")
-	
+
 	// 5. 发送请求（带超时）
 	client := &http.Client{Timeout: time.Duration(a.cfg.Models.MiniMax.Timeout) * time.Second}
 	resp, err := client.Do(httpReq)
@@ -80,29 +95,29 @@ func (a *MiniMaxAdapter) ChatComplete(req model.ChatRequest) (*model.ChatRespons
 		return nil, err
 	}
 	defer resp.Body.Close()
-	
+
 	// 6. 读取响应体
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// 7. 检查响应状态码
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("error: status code %d, body: %s", resp.StatusCode, string(respBody))
 	}
-	
+
 	// 8. 解析 JSON 响应
 	var result map[string]interface{}
 	if err := json.Unmarshal(respBody, &result); err != nil {
 		return nil, err
 	}
-	
+
 	// 9. 转换为模型响应格式
 	choices := result["choices"].([]interface{})
 	firstChoice := choices[0].(map[string]interface{})
 	message := firstChoice["message"].(map[string]interface{})
-	
+
 	response := &model.ChatResponse{
 		ID:      fmt.Sprintf("chatcmpl-%d", result["created"]),
 		Object:  "chat.completion",
@@ -119,7 +134,7 @@ func (a *MiniMaxAdapter) ChatComplete(req model.ChatRequest) (*model.ChatRespons
 			},
 		},
 	}
-	
+
 	// 10. 解析用量信息
 	if usage, ok := result["usage"].(map[string]interface{}); ok {
 		response.Usage = model.Usage{
@@ -128,7 +143,7 @@ func (a *MiniMaxAdapter) ChatComplete(req model.ChatRequest) (*model.ChatRespons
 			TotalTokens:      int(usage["total_tokens"].(float64)),
 		}
 	}
-	
+
 	return response, nil
 }
 
@@ -160,7 +175,12 @@ func (a *MiniMaxAdapter) Embeddings(req model.EmbeddingRequest) (*model.Embeddin
 	if req.Model != "" {
 		body["model"] = req.Model
 	} else {
-		body["model"] = "embedding-model"
+		body["model"] = "MiniMax-Text-01"
+	}
+
+	// 传递 encoding_format 参数
+	if req.EncodingFormat != "" {
+		body["encoding_format"] = req.EncodingFormat
 	}
 
 	// 序列化为 JSON
@@ -237,19 +257,4 @@ func (a *MiniMaxAdapter) Embeddings(req model.EmbeddingRequest) (*model.Embeddin
 	}
 
 	return response, nil
-}
-
-// cleanThinking 清理思维链标签
-// MiniMax 返回的内容可能包含 <think> 思考标签，需要清理
-func cleanThinking(content string) string {
-	// 移除 <think> 思考标签及其内容
-	content = strings.ReplaceAll(content, "<think>\n", "")
-	content = strings.ReplaceAll(content, "</think>\n", "")
-	content = strings.ReplaceAll(content, "<think>", "")
-	content = strings.ReplaceAll(content, "</think>", "")
-	// 清理多余空行
-	for strings.Contains(content, "\n\n\n") {
-		content = strings.ReplaceAll(content, "\n\n\n", "\n\n")
-	}
-	return strings.TrimSpace(content)
 }
