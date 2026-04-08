@@ -5,6 +5,7 @@ package storage
 import (
 	"database/sql"
 	"fmt"
+	"time"
 
 	"ai-gateway/internal/logger"
 	"ai-gateway/internal/model"
@@ -38,7 +39,7 @@ func NewDB(dbPath string) (*DB, error) {
 }
 
 // InitSchema 初始化数据库表结构
-// 创建 users、api_keys、token_usage 三张表及索引
+// 创建 users、api_keys、token_usage、ai_models、model_pricing 表及索引
 func (db *DB) InitSchema() error {
 	// 定义数据库表结构
 	schema := `
@@ -76,9 +77,36 @@ func (db *DB) InitSchema() error {
 		FOREIGN KEY(api_key_id) REFERENCES api_keys(id)
 	);
 
+	CREATE TABLE IF NOT EXISTS ai_models (
+		id TEXT PRIMARY KEY,
+		name TEXT NOT NULL,
+		provider TEXT NOT NULL,
+		base_url TEXT,
+		api_key TEXT,
+		enabled INTEGER DEFAULT 1,
+		models TEXT,
+		created_at TEXT DEFAULT (datetime('now')),
+		updated_at TEXT DEFAULT (datetime('now'))
+	);
+
+	CREATE TABLE IF NOT EXISTS model_pricing (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		model_id TEXT NOT NULL,
+		model_name TEXT NOT NULL,
+		prompt_price REAL NOT NULL,
+		completion_price REAL NOT NULL,
+		unit INTEGER DEFAULT 1000,
+		currency TEXT DEFAULT 'CNY',
+		created_at TEXT DEFAULT (datetime('now')),
+		updated_at TEXT DEFAULT (datetime('now')),
+		FOREIGN KEY(model_id) REFERENCES ai_models(id)
+	);
+
 	CREATE INDEX IF NOT EXISTS idx_token_usage_user_id ON token_usage(user_id);
 	CREATE INDEX IF NOT EXISTS idx_token_usage_created_at ON token_usage(created_at);
 	CREATE INDEX IF NOT EXISTS idx_api_keys_key_hash ON api_keys(key_hash);
+	CREATE INDEX IF NOT EXISTS idx_ai_models_provider ON ai_models(provider);
+	CREATE INDEX IF NOT EXISTS idx_model_pricing_model_id ON model_pricing(model_id);
 	`
 	// 执行建表语句
 	_, err := db.Exec(schema)
@@ -347,4 +375,197 @@ func (db *DB) DebugCheckKey(keyHash string) (bool, error) {
 		return false, err
 	}
 	return count > 0, nil
+}
+
+// ============ AI Model 管理 ============
+
+// CreateAIModel 创建 AI 模型配置
+func (db *DB) CreateAIModel(m *model.AIModel) error {
+	_, err := db.Exec(`
+		INSERT INTO ai_models (id, name, provider, base_url, api_key, enabled, models)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`, m.ID, m.Name, m.Provider, m.BaseURL, m.APIKey, m.Enabled, fmt.Sprintf("%v", m.Models))
+	return err
+}
+
+// GetAIModelByID 根据 ID 获取模型配置
+func (db *DB) GetAIModelByID(id string) (*model.AIModel, error) {
+	var m model.AIModel
+	var enabled int
+	var createdAt, updatedAt string
+	err := db.QueryRow(`
+		SELECT id, name, provider, base_url, api_key, enabled, models, created_at, updated_at
+		FROM ai_models WHERE id = ?
+	`, id).Scan(&m.ID, &m.Name, &m.Provider, &m.BaseURL, &m.APIKey, &enabled, &m.Models, &createdAt, &updatedAt)
+	if err != nil {
+		return nil, err
+	}
+	m.Enabled = enabled == 1
+	m.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAt)
+	m.UpdatedAt, _ = time.Parse("2006-01-02 15:04:05", updatedAt)
+	return &m, nil
+}
+
+// ListAIModels 获取所有模型配置
+func (db *DB) ListAIModels() ([]model.AIModel, error) {
+	rows, err := db.Query(`
+		SELECT id, name, provider, base_url, api_key, enabled, models, created_at, updated_at
+		FROM ai_models ORDER BY provider, name
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var models []model.AIModel
+	for rows.Next() {
+		var m model.AIModel
+		var enabled int
+		var createdAt, updatedAt string
+		if err := rows.Scan(&m.ID, &m.Name, &m.Provider, &m.BaseURL, &m.APIKey, &enabled, &m.Models, &createdAt, &updatedAt); err != nil {
+			return nil, err
+		}
+		m.Enabled = enabled == 1
+		m.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAt)
+		m.UpdatedAt, _ = time.Parse("2006-01-02 15:04:05", updatedAt)
+		models = append(models, m)
+	}
+	return models, nil
+}
+
+// UpdateAIModel 更新模型配置
+func (db *DB) UpdateAIModel(m *model.AIModel) error {
+	_, err := db.Exec(`
+		UPDATE ai_models SET name=?, provider=?, base_url=?, api_key=?, enabled=?, models=?, updated_at=datetime('now')
+		WHERE id=?
+	`, m.Name, m.Provider, m.BaseURL, m.APIKey, m.Enabled, fmt.Sprintf("%v", m.Models), m.ID)
+	return err
+}
+
+// DeleteAIModel 删除模型配置
+func (db *DB) DeleteAIModel(id string) error {
+	_, err := db.Exec("DELETE FROM ai_models WHERE id=?", id)
+	return err
+}
+
+// ============ Model Pricing 管理 ============
+
+// CreateModelPricing 创建模型定价
+func (db *DB) CreateModelPricing(p *model.ModelPricing) error {
+	result, err := db.Exec(`
+		INSERT INTO model_pricing (model_id, model_name, prompt_price, completion_price, unit, currency)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`, p.ModelID, p.ModelName, p.PromptPrice, p.CompletionPrice, p.Unit, p.Currency)
+	if err != nil {
+		return err
+	}
+	id, _ := result.LastInsertId()
+	p.ID = id
+	return nil
+}
+
+// GetModelPricing 获取模型定价
+func (db *DB) GetModelPricing(modelID string) (*model.ModelPricing, error) {
+	var p model.ModelPricing
+	var createdAt, updatedAt string
+	err := db.QueryRow(`
+		SELECT id, model_id, model_name, prompt_price, completion_price, unit, currency, created_at, updated_at
+		FROM model_pricing WHERE model_id = ?
+	`, modelID).Scan(&p.ID, &p.ModelID, &p.ModelName, &p.PromptPrice, &p.CompletionPrice, &p.Unit, &p.Currency, &createdAt, &updatedAt)
+	if err != nil {
+		return nil, err
+	}
+	p.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAt)
+	p.UpdatedAt, _ = time.Parse("2006-01-02 15:04:05", updatedAt)
+	return &p, nil
+}
+
+// ListModelPricings 获取所有模型定价
+func (db *DB) ListModelPricings() ([]model.ModelPricing, error) {
+	rows, err := db.Query(`
+		SELECT id, model_id, model_name, prompt_price, completion_price, unit, currency, created_at, updated_at
+		FROM model_pricing ORDER BY model_name
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var pricings []model.ModelPricing
+	for rows.Next() {
+		var p model.ModelPricing
+		var createdAt, updatedAt string
+		if err := rows.Scan(&p.ID, &p.ModelID, &p.ModelName, &p.PromptPrice, &p.CompletionPrice, &p.Unit, &p.Currency, &createdAt, &updatedAt); err != nil {
+			return nil, err
+		}
+		p.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAt)
+		p.UpdatedAt, _ = time.Parse("2006-01-02 15:04:05", updatedAt)
+		pricings = append(pricings, p)
+	}
+	return pricings, nil
+}
+
+// UpdateModelPricing 更新模型定价
+func (db *DB) UpdateModelPricing(p *model.ModelPricing) error {
+	_, err := db.Exec(`
+		UPDATE model_pricing SET prompt_price=?, completion_price=?, unit=?, currency=?, updated_at=datetime('now')
+		WHERE id=?
+	`, p.PromptPrice, p.CompletionPrice, p.Unit, p.Currency, p.ID)
+	return err
+}
+
+// InitMiniMaxModels 初始化 MiniMax 模型数据
+func (db *DB) InitMiniMaxModels() error {
+	// 检查是否已存在
+	var count int
+	db.QueryRow("SELECT COUNT(*) FROM ai_models WHERE provider='minimax'").Scan(&count)
+	if count > 0 {
+		return nil // 已初始化
+	}
+
+	// MiniMax 模型配置
+	models := []struct {
+		id, name, baseURL string
+		modelList         []string
+	}{
+		{"minimax-chat", "MiniMax Chat", "https://api.minimax.chat/v1", []string{"abab6-chat", "abab5.5-chat", "abab5-chat"}},
+		{"minimax-embedding", "MiniMax Embedding", "https://api.minimax.chat/v1", []string{"embo-01"}},
+		{"minimax-speech", "MiniMax Speech", "https://api.minimax.chat/v1", []string{"speech-01"}},
+		{"minimax-image", "MiniMax Image", "https://api.minimax.chat/v1", []string{"image-01"}},
+	}
+
+	for _, m := range models {
+		_, err := db.Exec(`
+			INSERT INTO ai_models (id, name, provider, base_url, enabled, models)
+			VALUES (?, ?, 'minimax', ?, 1, ?)
+		`, m.id, m.name, m.baseURL, fmt.Sprintf("%v", m.modelList))
+		if err != nil {
+			return err
+		}
+	}
+
+	// MiniMax 定价（参考价，单位：元/千Token）
+	pricings := []struct {
+		modelID, modelName string
+		prompt, completion float64
+	}{
+		{"minimax-chat", "abab6-chat", 0.01, 0.01},
+		{"minimax-chat", "abab5.5-chat", 0.005, 0.005},
+		{"minimax-chat", "abab5-chat", 0.001, 0.001},
+		{"minimax-embedding", "embo-01", 0.001, 0},
+		{"minimax-image", "image-01", 0, 0.05},    // 按张计费
+		{"minimax-speech", "speech-01", 0, 0.01}, // 按秒计费
+	}
+
+	for _, p := range pricings {
+		_, err := db.Exec(`
+			INSERT INTO model_pricing (model_id, model_name, prompt_price, completion_price, unit, currency)
+			VALUES (?, ?, ?, ?, 1000, 'CNY')
+		`, p.modelID, p.modelName, p.prompt, p.completion)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

@@ -1,6 +1,8 @@
 package model
 
 import (
+	"time"
+
 	"github.com/google/uuid"
 )
 
@@ -207,4 +209,32 @@ type ImageResponse struct {
 type ImageData struct {
 	Object string `json:"object"` // 对象类型
 	URL    string `json:"url"`    // 图片 URL
+}
+
+// ============ AI Model Management ============
+
+// AIModel AI 模型配置
+type AIModel struct {
+	ID        string    `json:"id"`         // 模型唯一标识
+	Name      string    `json:"name"`        // 模型名称（如 minimax-abab6-chat）
+	Provider  string    `json:"provider"`    // 提供商（如 minimax, openai）
+	BaseURL   string    `json:"base_url"`    // API 基础地址
+	APIKey    string    `json:"api_key"`     // API Key（加密存储）
+	Enabled   bool      `json:"enabled"`     // 是否启用
+	Models    []string  `json:"models"`      // 该 provider 下的模型列表（JSON 存储）
+	CreatedAt time.Time `json:"created_at"` // 创建时间
+	UpdatedAt time.Time `json:"updated_at"` // 更新时间
+}
+
+// ModelPricing 模型定价
+type ModelPricing struct {
+	ID              int64     `json:"id"`              // 定价记录ID
+	ModelID         string    `json:"model_id"`         // 关联模型ID
+	ModelName       string    `json:"model_name"`      // 模型名称（冗余存储便于查询）
+	PromptPrice     float64   `json:"prompt_price"`    // Prompt 价格（元/千Token）
+	CompletionPrice float64   `json:"completion_price"` // Completion 价格（元/千Token）
+	Unit            int       `json:"unit"`            // 价格单位：1000=按千Token计费
+	Currency        string    `json:"currency"`         // 货币单位（CNY/USD）
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
