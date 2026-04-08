@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"ai-gateway/internal/model"
 	"ai-gateway/internal/storage"
 
 	"github.com/gin-gonic/gin"
@@ -384,4 +385,175 @@ func (h *AdminHandler) UsageAPI(c *gin.Context) {
 		"Usage": usage,
 		"Stats": stats,
 	})
+}
+
+// ============ Models API ============
+
+// ListModelsAPI 获取所有模型
+func (h *AdminHandler) ListModelsAPI(c *gin.Context) {
+	models, err := h.db.ListAIModels()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, models)
+}
+
+// GetModelAPI 获取单个模型
+func (h *AdminHandler) GetModelAPI(c *gin.Context) {
+	id := c.Param("id")
+	model, err := h.db.GetAIModelByID(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "model not found"})
+		return
+	}
+	c.JSON(http.StatusOK, model)
+}
+
+// CreateModelAPI 创建模型
+func (h *AdminHandler) CreateModelAPI(c *gin.Context) {
+	var m struct {
+		ID       string   `json:"id" binding:"required"`
+		Name     string   `json:"name" binding:"required"`
+		Provider string   `json:"provider" binding:"required"`
+		BaseURL  string   `json:"base_url"`
+		APIKey   string   `json:"api_key"`
+		Enabled  bool     `json:"enabled"`
+		Models   []string `json:"models"`
+	}
+	if err := c.ShouldBindJSON(&m); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	model := &model.AIModel{
+		ID:       m.ID,
+		Name:     m.Name,
+		Provider: m.Provider,
+		BaseURL:  m.BaseURL,
+		APIKey:   m.APIKey,
+		Enabled:  m.Enabled,
+		Models:   m.Models,
+	}
+
+	if err := h.db.CreateAIModel(model); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, model)
+}
+
+// UpdateModelAPI 更新模型
+func (h *AdminHandler) UpdateModelAPI(c *gin.Context) {
+	id := c.Param("id")
+	var m struct {
+		Name     string   `json:"name"`
+		Provider string   `json:"provider"`
+		BaseURL  string   `json:"base_url"`
+		APIKey   string   `json:"api_key"`
+		Enabled  *bool    `json:"enabled"`
+		Models   []string `json:"models"`
+	}
+	if err := c.ShouldBindJSON(&m); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 先获取现有模型
+	existing, err := h.db.GetAIModelByID(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "model not found"})
+		return
+	}
+
+	// 更新字段
+	if m.Name != "" {
+		existing.Name = m.Name
+	}
+	if m.Provider != "" {
+		existing.Provider = m.Provider
+	}
+	if m.BaseURL != "" {
+		existing.BaseURL = m.BaseURL
+	}
+	if m.APIKey != "" {
+		existing.APIKey = m.APIKey
+	}
+	if m.Enabled != nil {
+		existing.Enabled = *m.Enabled
+	}
+	if m.Models != nil {
+		existing.Models = m.Models
+	}
+
+	if err := h.db.UpdateAIModel(existing); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, existing)
+}
+
+// DeleteModelAPI 删除模型
+func (h *AdminHandler) DeleteModelAPI(c *gin.Context) {
+	id := c.Param("id")
+	if err := h.db.DeleteAIModel(id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
+// GetModelPricingAPI 获取模型定价
+func (h *AdminHandler) GetModelPricingAPI(c *gin.Context) {
+	id := c.Param("id")
+	pricing, err := h.db.GetModelPricing(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "pricing not found"})
+		return
+	}
+	c.JSON(http.StatusOK, pricing)
+}
+
+// UpdateModelPricingAPI 更新模型定价
+func (h *AdminHandler) UpdateModelPricingAPI(c *gin.Context) {
+	id := c.Param("id")
+	var p struct {
+		PromptPrice     float64 `json:"prompt_price"`
+		CompletionPrice float64 `json:"completion_price"`
+		Unit            int     `json:"unit"`
+		Currency        string  `json:"currency"`
+	}
+	if err := c.ShouldBindJSON(&p); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 先获取现有定价
+	existing, err := h.db.GetModelPricing(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "pricing not found"})
+		return
+	}
+
+	if p.PromptPrice > 0 {
+		existing.PromptPrice = p.PromptPrice
+	}
+	if p.CompletionPrice > 0 {
+		existing.CompletionPrice = p.CompletionPrice
+	}
+	if p.Unit > 0 {
+		existing.Unit = p.Unit
+	}
+	if p.Currency != "" {
+		existing.Currency = p.Currency
+	}
+
+	if err := h.db.UpdateModelPricing(existing); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, existing)
 }

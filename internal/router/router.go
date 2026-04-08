@@ -38,12 +38,21 @@ func Setup(
 		adminGroup.GET("/users", adminHandler.UsersAPI)
 		adminGroup.GET("/keys", adminHandler.KeysAPI)
 		adminGroup.GET("/usage", adminHandler.UsageAPI)
-		
+
 		// 管理 API
 		adminGroup.POST("/api/user/recharge", adminHandler.Recharge)
 		adminGroup.POST("/api/user/reset", adminHandler.ResetBalance)
 		adminGroup.POST("/api/key/toggle", adminHandler.ToggleKey)
 		adminGroup.POST("/api/key/delete", adminHandler.DeleteKey)
+
+		// 模型管理 API
+		adminGroup.GET("/models", adminHandler.ListModelsAPI)
+		adminGroup.POST("/models", adminHandler.CreateModelAPI)
+		adminGroup.GET("/models/:id", adminHandler.GetModelAPI)
+		adminGroup.PUT("/models/:id", adminHandler.UpdateModelAPI)
+		adminGroup.DELETE("/models/:id", adminHandler.DeleteModelAPI)
+		adminGroup.GET("/models/:id/pricing", adminHandler.GetModelPricingAPI)
+		adminGroup.PUT("/models/:id/pricing", adminHandler.UpdateModelPricingAPI)
 	}
 
 	// 旧版管理后台 HTML（保留）
