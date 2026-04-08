@@ -73,6 +73,10 @@ func Setup(
 				protected.POST("/completions", gatewayHandler.Completions)
 			// Embeddings 接口（兼容 OpenAI）
 			protected.POST("/embeddings", gatewayHandler.Embeddings)
+			// Images 接口（兼容 OpenAI）
+			protected.POST("/images/generations", gatewayHandler.Images)
+			// Audio Transcription 接口（兼容 OpenAI）
+			protected.POST("/audio/transcriptions", gatewayHandler.AudioTranscriptions)
 			// 用户用量查询
 			protected.GET("/usage", gatewayHandler.GetUserUsage)
 			// 创建 API Key

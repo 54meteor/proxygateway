@@ -3,6 +3,7 @@ package handler
 import (
 	"bytes"
 	"encoding/json"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -94,6 +95,7 @@ func setupTestEnv(t *testing.T) (*GatewayHandler, *storage.DB, *gin.Engine) {
 	})
 	protected.POST("/chat/completions", handler.ChatComplete)
 	protected.POST("/embeddings", handler.Embeddings)
+	protected.POST("/audio/transcriptions", handler.AudioTranscriptions)
 	protected.GET("/usage", handler.GetUserUsage)
 	protected.POST("/keys", handler.CreateAPIKey)
 
@@ -442,4 +444,97 @@ func TestEmbeddings_E2E(t *testing.T) {
 	// 验证响应：MiniMax API 可能返回成功或错误，但不应该是认证/请求错误
 	assert.NotEqual(t, http.StatusUnauthorized, rec.Code)
 	assert.NotEqual(t, http.StatusBadRequest, rec.Code)
+}
+
+// ============ Audio Transcription API 测试 ============
+
+func TestAudioTranscriptions_Unauthorized(t *testing.T) {
+	_, _, engine := setupTestEnv(t)
+
+	// 创建 multipart form 文件
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	filePart, _ := writer.CreateFormFile("file", "test.mp3")
+	filePart.Write([]byte("fake audio data"))
+	writer.WriteField("model", "MiniMax-Audio")
+	writer.Close()
+
+	req := httptest.NewRequest("POST", "/v1/audio/transcriptions", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+}
+
+func TestAudioTranscriptions_MissingFile(t *testing.T) {
+	h, _, engine := setupTestEnv(t)
+
+	user, err := h.authService.CreateTestUser()
+	require.NoError(t, err)
+	apiKey, err := h.authService.GenerateAPIKey(user.ID, "audio-test")
+	require.NoError(t, err)
+
+	// 不带文件的请求
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	writer.WriteField("model", "MiniMax-Audio")
+	writer.Close()
+
+	req := httptest.NewRequest("POST", "/v1/audio/transcriptions", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+
+	// 缺少文件应该返回 bad request
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestTranscriptionRequest_Structure(t *testing.T) {
+	req := model.TranscriptionRequest{
+		Model:           "MiniMax-Audio",
+		File:            []byte("audio data"),
+		Language:        "zh",
+		Prompt:          "测试提示",
+		ResponseFormat:  "json",
+		Temperature:     0.5,
+	}
+
+	assert.Equal(t, "MiniMax-Audio", req.Model)
+	assert.Equal(t, "zh", req.Language)
+	assert.Equal(t, "json", req.ResponseFormat)
+	assert.Equal(t, 0.5, req.Temperature)
+}
+
+func TestTranscriptionResponse_Structure(t *testing.T) {
+	resp := model.TranscriptionResponse{
+		Text:      "Hello world",
+		Model:     "MiniMax-Audio",
+		Duration:  10.5,
+		Language:  "en",
+		Words: []model.Word{
+			{Word: "Hello", Start: 0.0, End: 0.5},
+			{Word: "world", Start: 0.6, End: 1.0},
+		},
+	}
+
+	assert.Equal(t, "Hello world", resp.Text)
+	assert.Equal(t, "MiniMax-Audio", resp.Model)
+	assert.Equal(t, 10.5, resp.Duration)
+	assert.Equal(t, "en", resp.Language)
+	assert.Len(t, resp.Words, 2)
+	assert.Equal(t, "Hello", resp.Words[0].Word)
+}
+
+func TestWord_Structure(t *testing.T) {
+	word := model.Word{
+		Word:  "test",
+		Start: 1.5,
+		End:   2.0,
+	}
+
+	assert.Equal(t, "test", word.Word)
+	assert.Equal(t, 1.5, word.Start)
+	assert.Equal(t, 2.0, word.End)
 }

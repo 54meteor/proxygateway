@@ -154,3 +154,57 @@ type CompletionChoice struct {
 	Index        int    `json:"index"`         // 选项索引
 	FinishReason string `json:"finish_reason"` // 结束原因
 }
+
+// ============ Audio Transcription API ============
+
+// TranscriptionRequest 语音转文字请求（兼容 OpenAI）
+type TranscriptionRequest struct {
+	Model      string  `form:"model"`       // 模型名称
+	File       []byte  `form:"file"`       // 音频文件（multipart/form-data 上传）
+	Language   string  `form:"language"`   // 语言（可选，如 "zh", "en"）
+	Prompt     string  `form:"prompt"`     // 可选提示文本
+	ResponseFormat string `form:"response_format"` // 响应格式：json, text, srt, verbose_json
+	Temperature float64 `form:"temperature"` // 温度参数（0-1）
+	TimestampGranularity string `form:"timestamp_granularity"` // 时间戳粒度
+}
+
+// TranscriptionResponse 语音转文字响应（兼容 OpenAI）
+type TranscriptionResponse struct {
+	Text       string  `json:"text"`       // 转录文本
+	Model      string  `json:"model"`      // 模型名称
+	Duration   float64 `json:"duration"`   // 音频时长（秒）
+	Language   string  `json:"language"`   // 检测到的语言
+	Words      []Word  `json:"words"`      // 分词信息（可选）
+}
+
+// Word 单词信息
+type Word struct {
+	Word   string  `json:"word"`   // 单词
+	Start float64 `json:"start"`  // 开始时间
+	End   float64 `json:"end"`    // 结束时间
+}
+
+// ============ Images API ============
+
+// ImageRequest 图片生成请求（兼容 OpenAI）
+type ImageRequest struct {
+	Model  string `json:"model"`  // 模型名称
+	Prompt string `json:"prompt"` // 提示文本
+	N      int    `json:"n"`      // 生成图片数量
+	Size   string `json:"size"`   // 图片尺寸
+}
+
+// ImageResponse 图片生成响应（兼容 OpenAI）
+type ImageResponse struct {
+	ID      string        `json:"id"`      // 响应ID
+	Object  string        `json:"object"`  // 对象类型
+	Created int64         `json:"created"` // 创建时间戳
+	Model   string        `json:"model"`   // 模型名称
+	Data    []ImageData   `json:"data"`    // 图片数据列表
+}
+
+// ImageData 单个图片数据
+type ImageData struct {
+	Object string `json:"object"` // 对象类型
+	URL    string `json:"url"`    // 图片 URL
+}
