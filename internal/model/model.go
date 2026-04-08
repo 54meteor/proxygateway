@@ -126,3 +126,31 @@ type EmbeddingUsage struct {
 	PromptTokens int `json:"prompt_tokens"`  // Prompt Token 数
 	TotalTokens  int `json:"total_tokens"`  // 总 Token 数
 }
+
+// ============ Completions API ============
+
+// CompletionRequest 文本补全请求（兼容 OpenAI）
+type CompletionRequest struct {
+	Model       string  `json:"model"`        // 模型名称
+	Prompt      string  `json:"prompt"`       // 提示文本
+	MaxTokens   int     `json:"max_tokens"`   // 最大 Token 数
+	Temperature float64 `json:"temperature"` // 温度参数
+	Stream      bool    `json:"stream"`      // 是否流式输出
+}
+
+// CompletionResponse 文本补全响应（兼容 OpenAI）
+type CompletionResponse struct {
+	ID      string              `json:"id"`       // 响应ID
+	Object  string              `json:"object"`   // 对象类型
+	Created int64               `json:"created"`  // 创建时间戳
+	Model   string              `json:"model"`    // 模型名称
+	Choices []CompletionChoice  `json:"choices"`  // 回复选项
+	Usage   Usage               `json:"usage"`    // Token 使用量
+}
+
+// CompletionChoice 补全选项
+type CompletionChoice struct {
+	Text         string `json:"text"`           // 补全文本
+	Index        int    `json:"index"`         // 选项索引
+	FinishReason string `json:"finish_reason"` // 结束原因
+}

@@ -203,6 +203,94 @@ func (h *GatewayHandler) ChatComplete(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
+// Completions 处理文本补全请求
+// 1. 验证请求
+// 2. 获取模型适配器
+// 3. 调用 LLM
+// 4. 记录用量并扣费
+// 5. 返回响应
+func (h *GatewayHandler) Completions(c *gin.Context) {
+	// 解析请求体
+	var req model.CompletionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 获取模型适配器
+	llmAdapter, ok := h.adapterFactory.Get(req.Model)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "model not supported"})
+		return
+	}
+
+	// 从 Context 获取用户和 API Key ID
+	userIDStr := c.GetString("user_id")
+	apiKeyIDStr := c.GetString("api_key_id")
+
+	userID, _ := uuid.Parse(userIDStr)
+	apiKeyID, _ := uuid.Parse(apiKeyIDStr)
+
+	// 构造与 ChatRequest 兼容的请求格式
+	chatReq := model.ChatRequest{
+		Model: req.Model,
+		Messages: []model.ChatMessage{
+			{Role: "user", Content: req.Prompt},
+		},
+		Temperature: req.Temperature,
+		MaxTokens:  req.MaxTokens,
+		Stream:     req.Stream,
+	}
+
+	logger.Info("Completion Request: userID=%s, model=%s", userIDStr, req.Model)
+
+	// 调用大模型
+	chatResp, err := llmAdapter.ChatComplete(chatReq)
+	if err != nil {
+		logger.Error("LLM Error: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 转换为 CompletionResponse 格式
+	compResp := model.CompletionResponse{
+		ID:      chatResp.ID,
+		Object:  "text_completion",
+		Created: chatResp.Created,
+		Model:   chatResp.Model,
+		Choices: make([]model.CompletionChoice, len(chatResp.Choices)),
+		Usage:   chatResp.Usage,
+	}
+	for i, choice := range chatResp.Choices {
+		compResp.Choices[i] = model.CompletionChoice{
+			Text:         choice.Message.Content,
+			Index:        choice.Index,
+			FinishReason: choice.FinishReason,
+		}
+	}
+
+	// 计算费用
+	cost := float64(compResp.Usage.PromptTokens)/1000*0.01 + float64(compResp.Usage.CompletionTokens)/1000*0.01
+
+	// 记录完整的请求和响应 JSON 到独立日志文件
+	reqJSON, _ := json.Marshal(req)
+	respJSON, _ := json.Marshal(compResp)
+	h.chatLogger.LogRequest(userIDStr, apiKeyIDStr, req.Model, string(reqJSON), string(respJSON), compResp.Usage.PromptTokens, compResp.Usage.CompletionTokens, cost)
+
+	// 记录使用量并扣费
+	if err := h.billingService.RecordUsage(userID, apiKeyID, chatReq, chatResp); err != nil {
+		logger.Error("Billing Error: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "billing failed: " + err.Error()})
+		return
+	}
+
+	logger.Info("Completion Response: userID=%s, model=%s, prompt=%d, completion=%d, total=%d, cost=%.6f",
+		userIDStr, compResp.Model, compResp.Usage.PromptTokens, compResp.Usage.CompletionTokens, compResp.Usage.TotalTokens, cost)
+
+	c.JSON(http.StatusOK, compResp)
+}
+
+
 // ListModels 列出可用模型
 // 返回所有已注册的模型列表
 func (h *GatewayHandler) ListModels(c *gin.Context) {
