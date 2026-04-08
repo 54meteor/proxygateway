@@ -26,7 +26,7 @@ import (
 // GatewayHandler 网关处理器
 // 处理所有 HTTP 请求的核心处理器
 type GatewayHandler struct {
-	adapterFactory *adapter.Factory        // LLM 适配器工厂
+	adapterFactory adapter.AdapterRegistry // LLM 适配器注册表
 	authService    *auth.AuthService      // 认证服务
 	billingService *billing.BillingService // 计费服务
 	db             *storage.DB             // 数据库实例
@@ -36,7 +36,7 @@ type GatewayHandler struct {
 
 // NewGatewayHandler 创建网关处理器
 func NewGatewayHandler(
-	adapterFactory *adapter.Factory,
+	adapterFactory adapter.AdapterRegistry,
 	authService *auth.AuthService,
 	billingService *billing.BillingService,
 	db *storage.DB,

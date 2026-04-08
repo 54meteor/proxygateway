@@ -7,6 +7,15 @@ import (
 	"ai-gateway/internal/model"
 )
 
+// AdapterRegistry 适配器注册表接口
+// 定义获取适配器和列出模型的方法
+type AdapterRegistry interface {
+	// Get 获取适配器
+	Get(model string) (LLMAdapter, bool)
+	// ListModels 列出所有支持的模型
+	ListModels() []string
+}
+
 // LLMAdapter LLM 适配器接口
 // 定义大模型交互的抽象方法
 type LLMAdapter interface {
