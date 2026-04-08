@@ -213,6 +213,50 @@ func (h *GatewayHandler) ListModels(c *gin.Context) {
 	})
 }
 
+// Embeddings 处理 Embeddings 请求
+// 1. 验证请求
+// 2. 获取适配器
+// 3. 调用 Embeddings API
+// 4. 返回响应
+func (h *GatewayHandler) Embeddings(c *gin.Context) {
+	// 解析请求体
+	var req model.EmbeddingRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 设置默认值
+	if req.Model == "" {
+		req.Model = "embedding-model"
+	}
+	if req.EncodingFormat == "" {
+		req.EncodingFormat = "float"
+	}
+
+	// 获取适配器
+	adapter, ok := h.adapterFactory.Get(req.Model)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "model not supported"})
+		return
+	}
+
+	// 获取用户信息
+	userIDStr := c.GetString("user_id")
+
+	// 调用 Embeddings
+	resp, err := adapter.Embeddings(req)
+	if err != nil {
+		logger.Error("Embeddings Error: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	logger.Info("Embeddings: userID=%s, model=%s, inputCount=%d", userIDStr, req.Model, len(req.Input))
+
+	c.JSON(http.StatusOK, resp)
+}
+
 // GetUserUsage 获取用户使用量
 // 查询指定时间范围内的 Token 使用记录
 func (h *GatewayHandler) GetUserUsage(c *gin.Context) {

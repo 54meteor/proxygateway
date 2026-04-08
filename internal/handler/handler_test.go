@@ -92,6 +92,7 @@ func setupTestEnv(t *testing.T) (*GatewayHandler, *storage.DB, *gin.Engine) {
 		c.Next()
 	})
 	protected.POST("/chat/completions", handler.ChatComplete)
+	protected.POST("/embeddings", handler.Embeddings)
 	protected.GET("/usage", handler.GetUserUsage)
 	protected.POST("/keys", handler.CreateAPIKey)
 
@@ -338,4 +339,77 @@ func TestUsage_Structure(t *testing.T) {
 	assert.Equal(t, 42, usage.PromptTokens)
 	assert.Equal(t, 100, usage.CompletionTokens)
 	assert.Equal(t, 142, usage.TotalTokens)
+}
+
+// ============ Embeddings API 测试 ============
+
+func TestEmbeddings_Unauthorized(t *testing.T) {
+	_, _, engine := setupTestEnv(t)
+
+	body := map[string]interface{}{
+		"model": "MiniMax-M2.5",
+		"input": []string{"Hello world"},
+	}
+	jsonBody, _ := json.Marshal(body)
+
+	req := httptest.NewRequest("POST", "/v1/embeddings", bytes.NewReader(jsonBody))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+}
+
+func TestEmbeddingRequest_Validation(t *testing.T) {
+	req := model.EmbeddingRequest{
+		Model:          "embedding-model",
+		Input:          []string{"Hello", "World"},
+		EncodingFormat: "float",
+	}
+
+	assert.Equal(t, "embedding-model", req.Model)
+	assert.Len(t, req.Input, 2)
+	assert.Equal(t, "float", req.EncodingFormat)
+}
+
+func TestEmbeddingResponse_Fields(t *testing.T) {
+	resp := model.EmbeddingResponse{
+		Object: "list",
+		Data: []model.EmbeddingData{
+			{
+				Object:    "embedding",
+				Embedding: []float64{0.001, -0.002, 0.003},
+				Index:     0,
+			},
+			{
+				Object:    "embedding",
+				Embedding: []float64{0.004, -0.005, 0.006},
+				Index:     1,
+			},
+		},
+		Model: "embedding-model",
+		Usage: model.EmbeddingUsage{
+			PromptTokens: 8,
+			TotalTokens:  8,
+		},
+	}
+
+	assert.Equal(t, "list", resp.Object)
+	assert.Len(t, resp.Data, 2)
+	assert.Equal(t, "embedding", resp.Data[0].Object)
+	assert.Len(t, resp.Data[0].Embedding, 3)
+	assert.Equal(t, 0, resp.Data[0].Index)
+	assert.Equal(t, "embedding-model", resp.Model)
+	assert.Equal(t, 8, resp.Usage.PromptTokens)
+	assert.Equal(t, 8, resp.Usage.TotalTokens)
+}
+
+func TestEmbeddingUsage_Structure(t *testing.T) {
+	usage := model.EmbeddingUsage{
+		PromptTokens: 10,
+		TotalTokens:   10,
+	}
+
+	assert.Equal(t, 10, usage.PromptTokens)
+	assert.Equal(t, 10, usage.TotalTokens)
 }

@@ -145,6 +145,100 @@ func (a *MiniMaxAdapter) GetModelName() string {
 	return "MiniMax-M2.5"
 }
 
+// Embeddings 处理文本向量化请求
+// 1. 构造 MiniMax Embeddings API 请求
+// 2. 发送 HTTP 请求
+// 3. 解析响应并转换格式
+func (a *MiniMaxAdapter) Embeddings(req model.EmbeddingRequest) (*model.EmbeddingResponse, error) {
+	// 1. 构建 API URL
+	url := a.cfg.Models.MiniMax.BaseURL + "/embeddings"
+
+	// 2. 构造请求体
+	body := map[string]interface{}{
+		"input": req.Input,
+	}
+	if req.Model != "" {
+		body["model"] = req.Model
+	} else {
+		body["model"] = "embedding-model"
+	}
+
+	// 序列化为 JSON
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+
+	// 3. 创建 HTTP 请求
+	httpReq, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return nil, err
+	}
+
+	// 设置请求头
+	httpReq.Header.Set("Authorization", "Bearer "+a.cfg.Models.MiniMax.APIKey)
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	// 4. 发送请求（带超时）
+	client := &http.Client{Timeout: time.Duration(a.cfg.Models.MiniMax.Timeout) * time.Second}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	// 5. 读取响应体
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	// 6. 检查响应状态码
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("error: status code %d, body: %s", resp.StatusCode, string(respBody))
+	}
+
+	// 7. 解析 JSON 响应
+	var result map[string]interface{}
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, err
+	}
+
+	// 8. 转换为 OpenAI 格式的响应
+	response := &model.EmbeddingResponse{
+		Object: "list",
+		Model:  req.Model,
+	}
+
+	// 解析 data 数组
+	if data, ok := result["data"].([]interface{}); ok {
+		for i, item := range data {
+			itemMap := item.(map[string]interface{})
+			embedding := itemMap["embedding"].([]interface{})
+			floatEmbedding := make([]float64, len(embedding))
+			for j, v := range embedding {
+				floatEmbedding[j] = v.(float64)
+			}
+			response.Data = append(response.Data, model.EmbeddingData{
+				Object:    "embedding",
+				Embedding: floatEmbedding,
+				Index:     int(itemMap["index"].(float64)),
+			})
+			_ = i // suppress unused warning
+		}
+	}
+
+	// 解析 usage
+	if usage, ok := result["usage"].(map[string]interface{}); ok {
+		response.Usage = model.EmbeddingUsage{
+			PromptTokens: int(usage["prompt_tokens"].(float64)),
+			TotalTokens:  int(usage["total_tokens"].(float64)),
+		}
+	}
+
+	return response, nil
+}
+
 // cleanThinking 清理思维链标签
 // MiniMax 返回的内容可能包含 <think> 思考标签，需要清理
 func cleanThinking(content string) string {

@@ -14,6 +14,10 @@ type LLMAdapter interface {
 	// 参数: req 聊天请求
 	// 返回: *model.ChatResponse 聊天响应
 	ChatComplete(req model.ChatRequest) (*model.ChatResponse, error)
+	// Embeddings 文本向量化
+	// 参数: req Embeddings 请求
+	// 返回: *model.EmbeddingResponse Embeddings 响应
+	Embeddings(req model.EmbeddingRequest) (*model.EmbeddingResponse, error)
 	// CountTokens 计算 Token 数量
 	// 参数: model 模型名称, text 文本内容
 	// 返回: token 数量

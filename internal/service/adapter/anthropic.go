@@ -2,6 +2,8 @@ package adapter
 
 import (
 	"context"
+	"fmt"
+
 	"ai-gateway/internal/config"
 	"ai-gateway/internal/model"
 
@@ -71,6 +73,11 @@ func (a *AnthropicAdapter) ChatComplete(req model.ChatRequest) (*model.ChatRespo
 
 func (a *AnthropicAdapter) CountTokens(model, text string) (int, error) {
 	return len(text) / 4, nil
+}
+
+func (a *AnthropicAdapter) Embeddings(req model.EmbeddingRequest) (*model.EmbeddingResponse, error) {
+	// Anthropic Embeddings 暂未实现
+	return nil, fmt.Errorf("anthropic embeddings not implemented")
 }
 
 func (a *AnthropicAdapter) GetModelName() string {

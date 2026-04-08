@@ -69,6 +69,8 @@ func Setup(
 		{
 			// 聊天接口（兼容 OpenAI）
 			protected.POST("/chat/completions", gatewayHandler.ChatComplete)
+			// Embeddings 接口（兼容 OpenAI）
+			protected.POST("/embeddings", gatewayHandler.Embeddings)
 			// 用户用量查询
 			protected.GET("/usage", gatewayHandler.GetUserUsage)
 			// 创建 API Key

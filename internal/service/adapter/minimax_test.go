@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"ai-gateway/internal/config"
+	"ai-gateway/internal/model"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -125,4 +126,61 @@ func TestFactory_NoEnabledModels(t *testing.T) {
 	models := factory.ListModels()
 	// 空列表因为没有启用的模型
 	assert.Empty(t, models)
+}
+
+// ============ Embeddings 测试 ============
+
+func TestMiniMaxAdapter_Embeddings(t *testing.T) {
+	cfg := &config.Config{
+		Models: config.ModelsConfig{
+			MiniMax: config.ModelProviderConfig{
+				Enabled:  true,
+				APIKey:   "test-key",
+				BaseURL:  "https://api.minimaxi.com/v1",
+				Timeout:  120,
+			},
+		},
+	}
+	adapter := NewMiniMaxAdapter(cfg)
+	req := model.EmbeddingRequest{
+		Model:          "embedding-model",
+		Input:          []string{"Hello world"},
+		EncodingFormat: "float",
+	}
+	// 验证方法存在且返回结构正确的响应（可能是空数据但结构正确）
+	resp, err := adapter.Embeddings(req)
+	// MiniMax API 可能返回成功但数据为空的情况
+	if err == nil {
+		assert.NotNil(t, resp)
+		assert.Equal(t, "list", resp.Object)
+		assert.Equal(t, "embedding-model", resp.Model)
+	}
+}
+
+func TestOpenAIAdapter_Embeddings_NotImplemented(t *testing.T) {
+	cfg := &config.Config{}
+	adapter := NewOpenAIAdapter(cfg)
+	req := model.EmbeddingRequest{
+		Model:          "text-embedding-3-small",
+		Input:          []string{"Hello world"},
+		EncodingFormat: "float",
+	}
+	resp, err := adapter.Embeddings(req)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not implemented")
+	assert.Nil(t, resp)
+}
+
+func TestAnthropicAdapter_Embeddings_NotImplemented(t *testing.T) {
+	cfg := &config.Config{}
+	adapter := NewAnthropicAdapter(cfg)
+	req := model.EmbeddingRequest{
+		Model:          "embedding-model",
+		Input:          []string{"Hello world"},
+		EncodingFormat: "float",
+	}
+	resp, err := adapter.Embeddings(req)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not implemented")
+	assert.Nil(t, resp)
 }

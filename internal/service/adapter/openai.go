@@ -2,6 +2,8 @@ package adapter
 
 import (
 	"context"
+	"fmt"
+
 	"ai-gateway/internal/config"
 	"ai-gateway/internal/model"
 
@@ -70,6 +72,11 @@ func (a *OpenAIAdapter) ChatComplete(req model.ChatRequest) (*model.ChatResponse
 
 func (a *OpenAIAdapter) CountTokens(model, text string) (int, error) {
 	return len(text) / 4, nil
+}
+
+func (a *OpenAIAdapter) Embeddings(req model.EmbeddingRequest) (*model.EmbeddingResponse, error) {
+	// OpenAI Embeddings 暂未实现
+	return nil, fmt.Errorf("openai embeddings not implemented")
 }
 
 func (a *OpenAIAdapter) GetModelName() string {

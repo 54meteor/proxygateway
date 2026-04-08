@@ -96,3 +96,33 @@ type Usage struct {
 	CompletionTokens int // Completion Token 数
 	TotalTokens      int // 总 Token 数
 }
+
+// ============ Embeddings API ============
+
+// EmbeddingRequest Embeddings 请求（兼容 OpenAI）
+type EmbeddingRequest struct {
+	Model          string   `json:"model"`           // 模型名称
+	Input          []string `json:"input"`           // 待向量化的文本列表
+	EncodingFormat string   `json:"encoding_format"` // 编码格式：float/base64
+}
+
+// EmbeddingResponse Embeddings 响应（兼容 OpenAI）
+type EmbeddingResponse struct {
+	Object string         `json:"object"`  // 对象类型
+	Data   []EmbeddingData `json:"data"`   // Embedding 数据列表
+	Model  string         `json:"model"`  // 模型名称
+	Usage  EmbeddingUsage `json:"usage"`  // Token 使用量
+}
+
+// EmbeddingData 单个 Embedding 数据
+type EmbeddingData struct {
+	Object    string    `json:"object"`    // 对象类型
+	Embedding []float64 `json:"embedding"` // 向量数据
+	Index     int       `json:"index"`    // 索引
+}
+
+// EmbeddingUsage Embedding Token 使用量
+type EmbeddingUsage struct {
+	PromptTokens int `json:"prompt_tokens"`  // Prompt Token 数
+	TotalTokens  int `json:"total_tokens"`  // 总 Token 数
+}
