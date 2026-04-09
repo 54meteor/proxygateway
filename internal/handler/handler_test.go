@@ -51,8 +51,9 @@ func setupTestEnv(t *testing.T) (*GatewayHandler, *storage.DB, *gin.Engine) {
 			},
 		},
 		Pricing: config.PricingConfig{
-			"MiniMax-M2.5":    {Prompt: 0.01, Completion: 0.01},
-			"MiniMax-Text-01": {Prompt: 0.01, Completion: 0.01},
+			"MiniMax-M2.5":      {Prompt: 0.01, Completion: 0.01},
+			"MiniMax-Text-01":   {Prompt: 0.01, Completion: 0.01},
+			"MiniMax-Image-01": {Prompt: 0.05, Completion: 0.02},
 		},
 	}
 

@@ -414,14 +414,14 @@ func (h *GatewayHandler) Images(c *gin.Context) {
 		return
 	}
 
-	// 构造计费请求（图片生成按次计费）
+	// 构造计费请求（图片生成按次计费，每张图片计 1K tokens）
 	chatReq := model.ChatRequest{Model: req.Model}
 	chatResp := &model.ChatResponse{
 		Model: resp.Model,
 		Usage: model.Usage{
 			PromptTokens:     0,
-			CompletionTokens: 0,
-			TotalTokens:      0,
+			CompletionTokens: req.N * 1000, // 每张图片计 1000 tokens，乘以单价即为每张图片费用
+			TotalTokens:      req.N * 1000,
 		},
 	}
 

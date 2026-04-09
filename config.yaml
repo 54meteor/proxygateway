@@ -51,6 +51,9 @@ pricing:
   MiniMax-M2.5:
     prompt: 0.01
     completion: 0.01
+  MiniMax-Image-01:
+    prompt: 0.05
+    completion: 0.02
 
 # 限流配置
 rate_limit:
