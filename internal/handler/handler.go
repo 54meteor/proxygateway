@@ -560,6 +560,7 @@ func (h *GatewayHandler) AudioTranscriptions(c *gin.Context) {
 	if responseFormat == "" {
 		responseFormat = "json"
 	}
+	encodingFormat := c.PostForm("encoding_format")
 
 	// 从 Context 获取用户和 API Key ID
 	userIDStr := c.GetString("user_id")
@@ -612,6 +613,14 @@ func (h *GatewayHandler) AudioTranscriptions(c *gin.Context) {
 	if err := writer.WriteField("response_format", responseFormat); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to write response_format field"})
 		return
+	}
+
+	// 添加 encoding_format 字段（可选）
+	if encodingFormat != "" {
+		if err := writer.WriteField("encoding_format", encodingFormat); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to write encoding_format field"})
+			return
+		}
 	}
 
 	if err := writer.Close(); err != nil {

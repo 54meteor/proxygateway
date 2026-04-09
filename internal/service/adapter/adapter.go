@@ -23,6 +23,10 @@ type LLMAdapter interface {
 	// 参数: req 聊天请求
 	// 返回: *model.ChatResponse 聊天响应
 	ChatComplete(req model.ChatRequest) (*model.ChatResponse, error)
+	// Completions 文本补全
+	// 参数: req 补全请求
+	// 返回: *model.CompletionResponse 补全响应
+	Completions(req model.CompletionRequest) (*model.CompletionResponse, error)
 	// Embeddings 文本向量化
 	// 参数: req Embeddings 请求
 	// 返回: *model.EmbeddingResponse Embeddings 响应

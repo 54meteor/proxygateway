@@ -87,3 +87,36 @@ func (a *AnthropicAdapter) GetModelName() string {
 func (a *AnthropicAdapter) Images(req model.ImageRequest) (*model.ImageResponse, error) {
 	return nil, fmt.Errorf("anthropic images not implemented")
 }
+
+func (a *AnthropicAdapter) Completions(req model.CompletionRequest) (*model.CompletionResponse, error) {
+	chatReq := model.ChatRequest{
+		Model:       req.Model,
+		Messages:    []model.ChatMessage{{Role: "user", Content: req.Prompt}},
+		Temperature: req.Temperature,
+		MaxTokens:   req.MaxTokens,
+		Stream:      req.Stream,
+	}
+
+	chatResp, err := a.ChatComplete(chatReq)
+	if err != nil {
+		return nil, err
+	}
+
+	choices := make([]model.CompletionChoice, len(chatResp.Choices))
+	for i, c := range chatResp.Choices {
+		choices[i] = model.CompletionChoice{
+			Text:         c.Message.Content,
+			Index:        c.Index,
+			FinishReason: c.FinishReason,
+		}
+	}
+
+	return &model.CompletionResponse{
+		ID:      chatResp.ID,
+		Object:  "text_completion",
+		Created: chatResp.Created,
+		Model:   chatResp.Model,
+		Choices: choices,
+		Usage:   chatResp.Usage,
+	}, nil
+}

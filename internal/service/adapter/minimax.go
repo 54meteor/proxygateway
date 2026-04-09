@@ -147,6 +147,41 @@ func (a *MiniMaxAdapter) ChatComplete(req model.ChatRequest) (*model.ChatRespons
 	return response, nil
 }
 
+// Completions 处理文本补全请求
+// 通过将 Prompt 包装为单条 User 消息，复用 ChatComplete 实现
+func (a *MiniMaxAdapter) Completions(req model.CompletionRequest) (*model.CompletionResponse, error) {
+	chatReq := model.ChatRequest{
+		Model:       req.Model,
+		Messages:    []model.ChatMessage{{Role: "user", Content: req.Prompt}},
+		Temperature: req.Temperature,
+		MaxTokens:   req.MaxTokens,
+		Stream:      req.Stream,
+	}
+
+	chatResp, err := a.ChatComplete(chatReq)
+	if err != nil {
+		return nil, err
+	}
+
+	choices := make([]model.CompletionChoice, len(chatResp.Choices))
+	for i, c := range chatResp.Choices {
+		choices[i] = model.CompletionChoice{
+			Text:         c.Message.Content,
+			Index:        c.Index,
+			FinishReason: c.FinishReason,
+		}
+	}
+
+	return &model.CompletionResponse{
+		ID:      chatResp.ID,
+		Object:  "text_completion",
+		Created: chatResp.Created,
+		Model:   chatResp.Model,
+		Choices: choices,
+		Usage:   chatResp.Usage,
+	}, nil
+}
+
 // CountTokens 计算 Token 数量
 // 注意：MiniMax API 需要使用专门的端点计算，这里简化处理
 func (a *MiniMaxAdapter) CountTokens(model, text string) (int, error) {

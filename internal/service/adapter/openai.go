@@ -74,6 +74,39 @@ func (a *OpenAIAdapter) CountTokens(model, text string) (int, error) {
 	return len(text) / 4, nil
 }
 
+func (a *OpenAIAdapter) Completions(req model.CompletionRequest) (*model.CompletionResponse, error) {
+	chatReq := model.ChatRequest{
+		Model:       req.Model,
+		Messages:    []model.ChatMessage{{Role: "user", Content: req.Prompt}},
+		Temperature: req.Temperature,
+		MaxTokens:   req.MaxTokens,
+		Stream:      req.Stream,
+	}
+
+	chatResp, err := a.ChatComplete(chatReq)
+	if err != nil {
+		return nil, err
+	}
+
+	choices := make([]model.CompletionChoice, len(chatResp.Choices))
+	for i, c := range chatResp.Choices {
+		choices[i] = model.CompletionChoice{
+			Text:         c.Message.Content,
+			Index:        c.Index,
+			FinishReason: c.FinishReason,
+		}
+	}
+
+	return &model.CompletionResponse{
+		ID:      chatResp.ID,
+		Object:  "text_completion",
+		Created: chatResp.Created,
+		Model:   chatResp.Model,
+		Choices: choices,
+		Usage:   chatResp.Usage,
+	}, nil
+}
+
 func (a *OpenAIAdapter) Embeddings(req model.EmbeddingRequest) (*model.EmbeddingResponse, error) {
 	// OpenAI Embeddings 暂未实现
 	return nil, fmt.Errorf("openai embeddings not implemented")
