@@ -612,3 +612,45 @@ func (db *DB) InitMiniMaxModels() error {
 
 	return nil
 }
+
+// CheckFieldExists 检查字段值是否已存在（用于唯一性校验）
+func (db *DB) CheckFieldExists(field, value string) (bool, error) {
+	var count int
+	query := fmt.Sprintf("SELECT COUNT(*) FROM users WHERE %s = ?", field)
+	err := db.QueryRow(query, value).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+// CheckFieldExistsExcludingUser 检查字段值是否已被指定用户外的其他用户使用
+func (db *DB) CheckFieldExistsExcludingUser(field, value, userID string) (bool, error) {
+	var count int
+	query := fmt.Sprintf("SELECT COUNT(*) FROM users WHERE %s = ? AND id != ?", field)
+	err := db.QueryRow(query, value, userID).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+// GetAPIKeyByID 根据 Key ID 获取 Key 信息
+func (db *DB) GetAPIKeyByID(keyID string) (*model.APIKey, error) {
+	id, err := uuid.Parse(keyID)
+	if err != nil {
+		return nil, err
+	}
+	row := db.QueryRow(`
+		SELECT id, user_id, name, is_active, created_at
+		FROM api_keys WHERE id = ?
+	`, id)
+	var key model.APIKey
+	var isActive int
+	err = row.Scan(&key.ID, &key.UserID, &key.Name, &isActive, &key.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	key.IsActive = isActive == 1
+	return &key, nil
+}

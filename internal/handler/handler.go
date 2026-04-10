@@ -707,3 +707,78 @@ func (h *GatewayHandler) AudioTranscriptions(c *gin.Context) {
 
 	c.JSON(http.StatusOK, transcriptionResp)
 }
+
+// GetMyBalance 用户查询自己的余额
+func (h *GatewayHandler) GetMyBalance(c *gin.Context) {
+	userID := c.GetString("user_id")
+	
+	var balance float64
+	err := h.db.QueryRow("SELECT balance FROM users WHERE id = ?", userID).Scan(&balance)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询余额失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data": gin.H{
+			"balance": balance,
+			"user_id": userID,
+		},
+	})
+}
+
+// GetMyUsage 用户查询自己的用量记录
+func (h *GatewayHandler) GetMyUsage(c *gin.Context) {
+	userID := c.GetString("user_id")
+	startDate := c.DefaultQuery("start", time.Now().AddDate(0, 0, -7).Format("2006-01-02"))
+	endDate := c.DefaultQuery("end", time.Now().Format("2006-01-02"))
+
+	rows, err := h.db.Query(`
+		SELECT api_key_id, model, prompt_tokens, completion_tokens, prompt_tokens + completion_tokens AS total_tokens, cost, created_at
+		FROM token_usage
+		WHERE user_id = ? AND date(created_at) >= ? AND date(created_at) <= ?
+		ORDER BY created_at DESC
+	`, userID, startDate, endDate)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询用量失败"})
+		return
+	}
+	defer rows.Close()
+
+	var records []map[string]interface{}
+	var totalPrompt, totalCompletion, totalTokens int
+	var totalCost float64
+
+	for rows.Next() {
+		var apiKeyID, model, createdAt string
+		var promptTokens, completionTokens, totalTokensRow int
+		var cost float64
+		rows.Scan(&apiKeyID, &model, &promptTokens, &completionTokens, &totalTokensRow, &cost, &createdAt)
+		records = append(records, map[string]interface{}{
+			"api_key_id":       apiKeyID,
+			"model":             model,
+			"prompt_tokens":     promptTokens,
+			"completion_tokens": completionTokens,
+			"total_tokens":      totalTokensRow,
+			"cost":              cost,
+			"created_at":        createdAt,
+		})
+		totalPrompt += promptTokens
+		totalCompletion += completionTokens
+		totalTokens += totalTokensRow
+		totalCost += cost
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data": gin.H{
+			"total_requests":   len(records),
+			"total_prompt_tokens":     totalPrompt,
+			"total_completion_tokens": totalCompletion,
+			"total_tokens":     totalTokens,
+			"total_cost":      totalCost,
+			"records":          records,
+		},
+	})
+}

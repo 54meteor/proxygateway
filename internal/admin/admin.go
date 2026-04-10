@@ -4,12 +4,14 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"regexp"
 	"os"
 	"path/filepath"
 	"time"
 
 	"ai-gateway/internal/model"
 	"ai-gateway/internal/storage"
+	"ai-gateway/internal/service/auth"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -17,18 +19,20 @@ import (
 
 // AdminHandler 管理后台处理器
 type AdminHandler struct {
-	db *storage.DB
-	templates *template.Template
+	db          *storage.DB
+	templates  *template.Template
+	authService *auth.AuthService
 }
 
 // NewAdminHandler 创建管理后台处理器
-func NewAdminHandler(db *storage.DB) *AdminHandler {
+func NewAdminHandler(db *storage.DB, authService *auth.AuthService) *AdminHandler {
 	// 加载模板
 	tmpl := template.Must(template.ParseGlob("templates/admin/*.html"))
 	
 	return &AdminHandler{
-		db: db,
-		templates: tmpl,
+		db:          db,
+		templates:   tmpl,
+		authService:  authService,
 	}
 }
 
@@ -607,4 +611,217 @@ func (h *AdminHandler) UpdateModelPricingAPI(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, existing)
+}
+
+// CreateUserAPI 创建用户
+func (h *AdminHandler) CreateUserAPI(c *gin.Context) {
+	var req struct {
+		Email    string `json:"email"`
+		Phone    string `json:"phone"`
+		Username string `json:"username"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 至少填写一项
+	if req.Email == "" && req.Phone == "" && req.Username == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "email、phone、username 至少填写一项"})
+		return
+	}
+
+	// 格式校验
+	if req.Email != "" && !isValidEmail(req.Email) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "邮箱格式不正确"})
+		return
+	}
+	if req.Phone != "" && !isValidPhone(req.Phone) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "手机号格式不正确，需为11位数字"})
+		return
+	}
+
+	// 唯一性校验（代码层）
+	if req.Email != "" {
+		exists, _ := h.db.CheckFieldExists("email", req.Email)
+		if exists {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "邮箱已被注册"})
+			return
+		}
+	}
+	if req.Phone != "" {
+		exists, _ := h.db.CheckFieldExists("phone", req.Phone)
+		if exists {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "手机号已被注册"})
+			return
+		}
+	}
+	if req.Username != "" {
+		exists, _ := h.db.CheckFieldExists("username", req.Username)
+		if exists {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "用户名已被注册"})
+			return
+		}
+	}
+
+	userID := uuid.New().String()
+	_, err := h.db.Exec(`
+		INSERT INTO users (id, email, phone, username, balance, created_at)
+		VALUES (?, ?, ?, ?, 0, datetime('now'))
+	`, userID, req.Email, req.Phone, req.Username)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建用户失败: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true, "user_id": userID, "message": "用户创建成功"})
+}
+
+// UpdateUserAPI 更新用户
+func (h *AdminHandler) UpdateUserAPI(c *gin.Context) {
+	var req struct {
+		UserID   string `json:"user_id" binding:"required"`
+		Email    string `json:"email"`
+		Phone    string `json:"phone"`
+		Username string `json:"username"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 格式校验
+	if req.Email != "" && !isValidEmail(req.Email) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "邮箱格式不正确"})
+		return
+	}
+	if req.Phone != "" && !isValidPhone(req.Phone) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "手机号格式不正确，需为11位数字"})
+		return
+	}
+
+	// 唯一性校验（排除自己）
+	if req.Email != "" {
+		exists, _ := h.db.CheckFieldExistsExcludingUser("email", req.Email, req.UserID)
+		if exists {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "邮箱已被其他用户注册"})
+			return
+		}
+	}
+	if req.Phone != "" {
+		exists, _ := h.db.CheckFieldExistsExcludingUser("phone", req.Phone, req.UserID)
+		if exists {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "手机号已被其他用户注册"})
+			return
+		}
+	}
+	if req.Username != "" {
+		exists, _ := h.db.CheckFieldExistsExcludingUser("username", req.Username, req.UserID)
+		if exists {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "用户名已被其他用户注册"})
+			return
+		}
+	}
+
+	_, err := h.db.Exec(`
+		UPDATE users SET email=?, phone=?, username=? WHERE id=?
+	`, req.Email, req.Phone, req.Username, req.UserID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新用户失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "用户更新成功"})
+}
+
+// DeleteUserAPI 删除用户
+func (h *AdminHandler) DeleteUserAPI(c *gin.Context) {
+	var req struct {
+		UserID string `json:"user_id" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 级联删除
+	h.db.Exec(`DELETE FROM api_keys WHERE user_id=?`, req.UserID)
+	h.db.Exec(`DELETE FROM token_usage WHERE user_id=?`, req.UserID)
+	h.db.Exec(`DELETE FROM users WHERE id=?`, req.UserID)
+
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "用户删除成功"})
+}
+
+// CreateKeyAPI 为指定用户创建 API Key
+func (h *AdminHandler) CreateKeyAPI(c *gin.Context) {
+	var req struct {
+		UserID string `json:"user_id" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	apiKey, err := h.authService.GenerateAPIKey(uuid.MustParse(req.UserID), "admin-created")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建 Key 失败: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":  true,
+		"api_key":  apiKey,
+		"message":  "API Key 创建成功，请妥善保管",
+	})
+}
+
+// ResetKeyAPI 重置指定 API Key
+func (h *AdminHandler) ResetKeyAPI(c *gin.Context) {
+	var req struct {
+		KeyID string `json:"key_id" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 旧 Key 信息
+	key, err := h.db.GetAPIKeyByID(req.KeyID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Key 不存在"})
+		return
+	}
+
+	// 生成新 Key
+	newKey, err := h.authService.GenerateAPIKey(key.UserID, key.Name)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "重置 Key 失败"})
+		return
+	}
+
+	// 删除旧 Key
+	h.db.Exec(`DELETE FROM api_keys WHERE id=?`, req.KeyID)
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"api_key": newKey,
+		"message": "Key 已重置，旧 Key 立即失效",
+	})
+}
+
+// GetAPIKeyByID 根据 ID 获取 Key 信息
+func (h *AdminHandler) GetAPIKeyByID(keyID string) (*model.APIKey, error) {
+	return h.db.GetAPIKeyByID(keyID)
+}
+
+// isValidEmail 校验邮箱格式
+func isValidEmail(email string) bool {
+	matched, _ := regexp.MatchString(`^[^@]+@[^@]+\.[^@]+$`, email)
+	return matched
+}
+
+// isValidPhone 校验手机号格式（11位数字）
+func isValidPhone(phone string) bool {
+	matched, _ := regexp.MatchString(`^\d{11}$`, phone)
+	return matched
 }

@@ -42,6 +42,11 @@ func Setup(
 		// 管理 API
 		adminGroup.POST("/api/user/recharge", adminHandler.Recharge)
 		adminGroup.POST("/api/user/reset", adminHandler.ResetBalance)
+		adminGroup.POST("/api/user/create", adminHandler.CreateUserAPI)
+		adminGroup.POST("/api/user/update", adminHandler.UpdateUserAPI)
+		adminGroup.POST("/api/user/delete", adminHandler.DeleteUserAPI)
+		adminGroup.POST("/api/key/create", adminHandler.CreateKeyAPI)
+		adminGroup.POST("/api/key/reset", adminHandler.ResetKeyAPI)
 		adminGroup.POST("/api/key/toggle", adminHandler.ToggleKey)
 		adminGroup.POST("/api/key/delete", adminHandler.DeleteKey)
 
@@ -89,6 +94,8 @@ func Setup(
 			// 用户用量查询
 			protected.GET("/usage", gatewayHandler.GetUserUsage)
 			// 创建 API Key
+			protected.GET("/me/balance", gatewayHandler.GetMyBalance)
+			protected.GET("/me/usage", gatewayHandler.GetMyUsage)
 			protected.POST("/keys", gatewayHandler.CreateAPIKey)
 		}
 	}
