@@ -185,8 +185,14 @@ func (h *GatewayHandler) ChatComplete(c *gin.Context) {
 		return
 	}
 
-	// 计算费用
-	cost := float64(resp.Usage.PromptTokens)/1000*0.01 + float64(resp.Usage.CompletionTokens)/1000*0.01
+	// 计算费用（先检查模型是否支持计费，不支持则直接拒绝）
+	cost, costErr := h.billingService.CalculateCost(req.Model, resp.Usage.PromptTokens, resp.Usage.CompletionTokens)
+	if costErr != nil {
+		// 计费模型不支持，已浪费了 LLM 资源，但总比返回错误结果好
+		logger.Error("Billing model not supported: %s, error: %v", req.Model, costErr)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "billing model not supported: " + req.Model})
+		return
+	}
 
 	// 记录响应日志（包含完整 JSON）
 	logger.Info("Response: userID=%s, model=%s, prompt=%d, completion=%d, total=%d, cost=%.6f",

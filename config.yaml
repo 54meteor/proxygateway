@@ -48,6 +48,9 @@ pricing:
     prompt: 0.003
     completion: 0.015
   # MiniMax 模型
+  MiniMax-M2.7:
+    prompt: 0.01
+    completion: 0.01
   MiniMax-M2.5:
     prompt: 0.01
     completion: 0.01
