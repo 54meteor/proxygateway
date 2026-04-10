@@ -626,8 +626,8 @@ func (h *AdminHandler) CreateModelAPI(c *gin.Context) {
 
 // UpdateModelAPI 更新模型
 func (h *AdminHandler) UpdateModelAPI(c *gin.Context) {
-	id := c.Param("id")
 	var m struct {
+		ID       string   `json:"id" binding:"required"`
 		Name     string   `json:"name"`
 		Provider string   `json:"provider"`
 		BaseURL  string   `json:"base_url"`
@@ -641,7 +641,7 @@ func (h *AdminHandler) UpdateModelAPI(c *gin.Context) {
 	}
 
 	// 先获取现有模型
-	existing, err := h.db.GetAIModelByID(id)
+	existing, err := h.db.GetAIModelByID(m.ID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "model not found"})
 		return
@@ -677,8 +677,14 @@ func (h *AdminHandler) UpdateModelAPI(c *gin.Context) {
 
 // DeleteModelAPI 删除模型
 func (h *AdminHandler) DeleteModelAPI(c *gin.Context) {
-	id := c.Param("id")
-	if err := h.db.DeleteAIModel(id); err != nil {
+	var req struct {
+		ID string `json:"id" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := h.db.DeleteAIModel(req.ID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

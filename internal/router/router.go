@@ -50,14 +50,14 @@ func Setup(
 		adminGroup.POST("/api/key/toggle", adminHandler.ToggleKey)
 		adminGroup.POST("/api/key/delete", adminHandler.DeleteKey)
 
-		// 模型管理 API
+		// 模型管理 API（统一为 POST 风格，注意顺序：具体路径在前，动态路径在后）
 		adminGroup.GET("/models", adminHandler.ListModelsAPI)
 		adminGroup.POST("/models", adminHandler.CreateModelAPI)
+		adminGroup.POST("/models/update", adminHandler.UpdateModelAPI)
+		adminGroup.POST("/models/delete", adminHandler.DeleteModelAPI)
 		adminGroup.GET("/models/:id", adminHandler.GetModelAPI)
-		adminGroup.PUT("/models/:id", adminHandler.UpdateModelAPI)
-		adminGroup.DELETE("/models/:id", adminHandler.DeleteModelAPI)
 		adminGroup.GET("/models/:id/pricing", adminHandler.GetModelPricingAPI)
-		adminGroup.PUT("/models/:id/pricing", adminHandler.UpdateModelPricingAPI)
+		adminGroup.POST("/models/:id/pricing/update", adminHandler.UpdateModelPricingAPI)
 	}
 
 	// 旧版管理后台 HTML（保留）
