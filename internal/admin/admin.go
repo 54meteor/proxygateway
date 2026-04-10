@@ -12,6 +12,7 @@ import (
 	"ai-gateway/internal/storage"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 // AdminHandler 管理后台处理器
@@ -396,7 +397,34 @@ func (h *AdminHandler) ListModelsAPI(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, models)
+
+	// 转换字段以匹配前端期望的格式
+	var result []map[string]interface{}
+	for _, m := range models {
+		status := "inactive"
+		if m.Enabled {
+			status = "active"
+		}
+		result = append(result, map[string]interface{}{
+			"id":          m.ID,
+			"name":        m.Name,
+			"provider":    m.Provider,
+			"base_url":    m.BaseURL,
+			"api_key":     m.APIKey,
+			"status":      status,
+			"models":      m.Models,
+			"createdAt":   m.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+			"updatedAt":   m.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data": gin.H{
+			"list":  result,
+			"total": len(result),
+		},
+	})
 }
 
 // GetModelAPI 获取单个模型
@@ -407,13 +435,30 @@ func (h *AdminHandler) GetModelAPI(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "model not found"})
 		return
 	}
-	c.JSON(http.StatusOK, model)
+	status := "inactive"
+	if model.Enabled {
+		status = "active"
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data": map[string]interface{}{
+			"id":        model.ID,
+			"name":      model.Name,
+			"provider":  model.Provider,
+			"base_url":  model.BaseURL,
+			"api_key":   model.APIKey,
+			"status":    status,
+			"models":    model.Models,
+			"createdAt": model.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+			"updatedAt": model.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		},
+	})
 }
 
 // CreateModelAPI 创建模型
 func (h *AdminHandler) CreateModelAPI(c *gin.Context) {
 	var m struct {
-		ID       string   `json:"id" binding:"required"`
+		ID       string   `json:"id"`
 		Name     string   `json:"name" binding:"required"`
 		Provider string   `json:"provider" binding:"required"`
 		BaseURL  string   `json:"base_url"`
@@ -426,8 +471,14 @@ func (h *AdminHandler) CreateModelAPI(c *gin.Context) {
 		return
 	}
 
+	// 生成 UUID 如果未提供
+	modelID := m.ID
+	if modelID == "" {
+		modelID = uuid.New().String()
+	}
+
 	model := &model.AIModel{
-		ID:       m.ID,
+		ID:       modelID,
 		Name:     m.Name,
 		Provider: m.Provider,
 		BaseURL:  m.BaseURL,
