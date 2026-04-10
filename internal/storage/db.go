@@ -4,6 +4,7 @@ package storage
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -13,6 +14,42 @@ import (
 	"github.com/google/uuid"
 	_ "github.com/glebarez/sqlite"
 )
+
+// StringSlice JSON字符串切片类型，用于Scan数据库中的JSON数组
+type StringSlice []string
+
+// Scan 实现sql.Scanner接口，将数据库中的JSON字符串转换为[]string
+func (s *StringSlice) Scan(value interface{}) error {
+	if value == nil {
+		*s = nil
+		return nil
+	}
+
+	var bytes []byte
+	switch v := value.(type) {
+	case []byte:
+		bytes = v
+	case string:
+		bytes = []byte(v)
+	default:
+		return fmt.Errorf("cannot scan type %T into StringSlice", value)
+	}
+
+	if len(bytes) == 0 {
+		*s = nil
+		return nil
+	}
+
+	// 数据库存储的是JSON字符串（如 "[\"model1\"]"），需要先解析外层字符串
+	var jsonStr string
+	if err := json.Unmarshal(bytes, &jsonStr); err != nil {
+		// 如果解析失败，尝试直接解析（处理非字符串的JSON数组）
+		return json.Unmarshal(bytes, s)
+	}
+
+	// 解析内层JSON数组
+	return json.Unmarshal([]byte(jsonStr), s)
+}
 
 // DB 数据库包装器
 // 封装 sql.DB 提供数据库操作方法
@@ -381,10 +418,11 @@ func (db *DB) DebugCheckKey(keyHash string) (bool, error) {
 
 // CreateAIModel 创建 AI 模型配置
 func (db *DB) CreateAIModel(m *model.AIModel) error {
+	modelsJSON, _ := json.Marshal(m.Models)
 	_, err := db.Exec(`
 		INSERT INTO ai_models (id, name, provider, base_url, api_key, enabled, models)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
-	`, m.ID, m.Name, m.Provider, m.BaseURL, m.APIKey, m.Enabled, fmt.Sprintf("%v", m.Models))
+	`, m.ID, m.Name, m.Provider, m.BaseURL, m.APIKey, m.Enabled, string(modelsJSON))
 	return err
 }
 
@@ -392,14 +430,16 @@ func (db *DB) CreateAIModel(m *model.AIModel) error {
 func (db *DB) GetAIModelByID(id string) (*model.AIModel, error) {
 	var m model.AIModel
 	var enabled int
+	var models StringSlice
 	var createdAt, updatedAt string
 	err := db.QueryRow(`
 		SELECT id, name, provider, base_url, api_key, enabled, models, created_at, updated_at
 		FROM ai_models WHERE id = ?
-	`, id).Scan(&m.ID, &m.Name, &m.Provider, &m.BaseURL, &m.APIKey, &enabled, &m.Models, &createdAt, &updatedAt)
+	`, id).Scan(&m.ID, &m.Name, &m.Provider, &m.BaseURL, &m.APIKey, &enabled, &models, &createdAt, &updatedAt)
 	if err != nil {
 		return nil, err
 	}
+	m.Models = []string(models)
 	m.Enabled = enabled == 1
 	m.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAt)
 	m.UpdatedAt, _ = time.Parse("2006-01-02 15:04:05", updatedAt)
@@ -417,28 +457,31 @@ func (db *DB) ListAIModels() ([]model.AIModel, error) {
 	}
 	defer rows.Close()
 
-	var models []model.AIModel
+	var result []model.AIModel
 	for rows.Next() {
 		var m model.AIModel
 		var enabled int
+		var models StringSlice
 		var createdAt, updatedAt string
-		if err := rows.Scan(&m.ID, &m.Name, &m.Provider, &m.BaseURL, &m.APIKey, &enabled, &m.Models, &createdAt, &updatedAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.Name, &m.Provider, &m.BaseURL, &m.APIKey, &enabled, &models, &createdAt, &updatedAt); err != nil {
 			return nil, err
 		}
+		m.Models = []string(models)
 		m.Enabled = enabled == 1
 		m.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAt)
 		m.UpdatedAt, _ = time.Parse("2006-01-02 15:04:05", updatedAt)
-		models = append(models, m)
+		result = append(result, m)
 	}
-	return models, nil
+	return result, nil
 }
 
 // UpdateAIModel 更新模型配置
 func (db *DB) UpdateAIModel(m *model.AIModel) error {
+	modelsJSON, _ := json.Marshal(m.Models)
 	_, err := db.Exec(`
 		UPDATE ai_models SET name=?, provider=?, base_url=?, api_key=?, enabled=?, models=?, updated_at=datetime('now')
 		WHERE id=?
-	`, m.Name, m.Provider, m.BaseURL, m.APIKey, m.Enabled, fmt.Sprintf("%v", m.Models), m.ID)
+	`, m.Name, m.Provider, m.BaseURL, m.APIKey, m.Enabled, string(modelsJSON), m.ID)
 	return err
 }
 
