@@ -368,14 +368,50 @@ func (h *AdminHandler) DashboardAPI(c *gin.Context) {
 
 // UsersAPI 用户列表 JSON
 func (h *AdminHandler) UsersAPI(c *gin.Context) {
-	users := h.getAllUsers()
-	c.JSON(200, users)
+	rows, err := h.db.Query(`
+		SELECT u.id, u.email, u.phone, u.username, u.balance, u.created_at,
+			(SELECT k.key_hash FROM api_keys k WHERE k.user_id = u.id AND k.is_active = 1 ORDER BY k.created_at DESC LIMIT 1) as key_hash
+		FROM users u ORDER BY u.created_at DESC
+	`)
+	if err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+	defer rows.Close()
+
+	var users []map[string]interface{}
+	for rows.Next() {
+		var id, email, phone, username, createdAt, keyHash string
+		var balance float64
+		rows.Scan(&id, &email, &phone, &username, &balance, &createdAt, &keyHash)
+
+		// 脱敏：前5位 + ***** + 后5位，无Key则为空字符串
+		var maskedKey string
+		if keyHash != "" {
+			if len(keyHash) >= 10 {
+				maskedKey = keyHash[:5] + "*****" + keyHash[len(keyHash)-5:]
+			} else {
+				maskedKey = keyHash[:3] + "****"
+			}
+		}
+
+		users = append(users, map[string]interface{}{
+			"id":          id,
+			"email":       email,
+			"phone":       phone,
+			"username":    username,
+			"balance":     balance,
+			"created_at":  createdAt,
+			"api_key":     maskedKey,
+		})
+	}
+	c.JSON(200, gin.H{"success": true, "data": users})
 }
 
-// KeysAPI API Keys JSON
+// KeysAPI API Keys JSON（已废弃，保留路由兼容）
 func (h *AdminHandler) KeysAPI(c *gin.Context) {
 	keys := h.getAllKeys()
-	c.JSON(200, keys)
+	c.JSON(200, gin.H{"success": true, "data": keys})
 }
 
 // UsageAPI 用量统计 JSON
@@ -762,6 +798,14 @@ func (h *AdminHandler) CreateKeyAPI(c *gin.Context) {
 		return
 	}
 
+	// 检查该用户是否已有激活的 Key
+	var count int
+	h.db.QueryRow(`SELECT COUNT(*) FROM api_keys WHERE user_id = ? AND is_active = 1`, req.UserID).Scan(&count)
+	if count > 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "该用户已存在 API Key，请使用重置功能"})
+		return
+	}
+
 	apiKey, err := h.authService.GenerateAPIKey(uuid.MustParse(req.UserID), "admin-created")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建 Key 失败: " + err.Error()})
@@ -775,37 +819,38 @@ func (h *AdminHandler) CreateKeyAPI(c *gin.Context) {
 	})
 }
 
-// ResetKeyAPI 重置指定 API Key
+// ResetKeyAPI 重置指定用户的 API Key（通过 user_id）
 func (h *AdminHandler) ResetKeyAPI(c *gin.Context) {
 	var req struct {
-		KeyID string `json:"key_id" binding:"required"`
+		UserID string `json:"user_id" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	// 旧 Key 信息
-	key, err := h.db.GetAPIKeyByID(req.KeyID)
+	// 查找该用户当前激活的 Key
+	var oldKeyID string
+	err := h.db.QueryRow(`SELECT id FROM api_keys WHERE user_id = ? AND is_active = 1`, req.UserID).Scan(&oldKeyID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Key 不存在"})
-		return
-	}
-
-	// 生成新 Key
-	newKey, err := h.authService.GenerateAPIKey(key.UserID, key.Name)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "重置 Key 失败"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "该用户没有可重置的 Key"})
 		return
 	}
 
 	// 删除旧 Key
-	h.db.Exec(`DELETE FROM api_keys WHERE id=?`, req.KeyID)
+	h.db.Exec(`DELETE FROM api_keys WHERE id = ?`, oldKeyID)
+
+	// 生成新 Key
+	newKey, err := h.authService.GenerateAPIKey(uuid.MustParse(req.UserID), "admin-reset")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "重置 Key 失败: " + err.Error()})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"api_key": newKey,
-		"message": "Key 已重置，旧 Key 立即失效",
+		"message": "Key 已重置，新 Key 请妥善保管",
 	})
 }
 
