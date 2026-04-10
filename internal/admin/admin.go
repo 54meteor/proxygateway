@@ -182,12 +182,101 @@ func (h *AdminHandler) getStats() map[string]interface{} {
 	var todayCost float64
 	h.db.QueryRow("SELECT COUNT(*), COALESCE(SUM(cost), 0) FROM token_usage WHERE date(created_at) = ?", today).Scan(&todayRequests, &todayCost)
 	
+	// 累计统计
+	var totalRequests int64
+	var totalPrompt, totalCompletion int64
+	var totalCost float64
+	h.db.QueryRow("SELECT COUNT(*), COALESCE(SUM(prompt_tokens), 0), COALESCE(SUM(completion_tokens), 0), COALESCE(SUM(cost), 0) FROM token_usage").Scan(&totalRequests, &totalPrompt, &totalCompletion, &totalCost)
+	
 	stats["TotalUsers"] = totalUsers
 	stats["TotalKeys"] = totalKeys
 	stats["TodayRequests"] = todayRequests
 	stats["TodayCost"] = todayCost
+	stats["TotalRequests"] = totalRequests
+	stats["TotalTokens"] = totalPrompt + totalCompletion
+	stats["TotalPromptTokens"] = totalPrompt
+	stats["TotalCompletionTokens"] = totalCompletion
+	stats["TotalCost"] = totalCost
+	
+	// Top 5 用户
+	topUsers := h.getTopUsers(5)
+	stats["TopUsers"] = topUsers
+	
+	// 近7天趋势
+	trend := h.getUsageTrend(7)
+	stats["Trend"] = trend
 	
 	return stats
+}
+
+func (h *AdminHandler) getTopUsers(limit int) []map[string]interface{} {
+	rows, _ := h.db.Query(`
+		SELECT u.id, u.email, u.username,
+			COALESCE(SUM(t.prompt_tokens), 0) as total_prompt,
+			COALESCE(SUM(t.completion_tokens), 0) as total_completion,
+			COALESCE(SUM(t.cost), 0) as total_cost,
+			COUNT(t.id) as request_count
+		FROM users u
+		LEFT JOIN token_usage t ON u.id = t.user_id
+		GROUP BY u.id
+		ORDER BY total_cost DESC
+		LIMIT ?
+	`, limit)
+	defer rows.Close()
+	
+	var result []map[string]interface{}
+	for rows.Next() {
+		var id, email, username string
+		var totalPrompt, totalCompletion, requestCount int64
+		var totalCost float64
+		rows.Scan(&id, &email, &username, &totalPrompt, &totalCompletion, &totalCost, &requestCount)
+		emailDisplay := email
+		if emailDisplay == "" {
+			emailDisplay = safeSubstr(id, 8)
+		}
+		result = append(result, map[string]interface{}{
+			"UserID":          id,
+			"Email":           emailDisplay,
+			"TotalPrompt":     totalPrompt,
+			"TotalCompletion": totalCompletion,
+			"TotalTokens":     totalPrompt + totalCompletion,
+			"TotalCost":       totalCost,
+			"RequestCount":    requestCount,
+		})
+	}
+	return result
+}
+
+func (h *AdminHandler) getUsageTrend(days int) []map[string]interface{} {
+	rows, _ := h.db.Query(`
+		SELECT date(created_at) as day,
+			COUNT(*) as requests,
+			COALESCE(SUM(prompt_tokens), 0) as prompt_tokens,
+			COALESCE(SUM(completion_tokens), 0) as completion_tokens,
+			COALESCE(SUM(cost), 0) as cost
+		FROM token_usage
+		WHERE created_at >= datetime('now', '-' || ? || ' days')
+		GROUP BY date(created_at)
+		ORDER BY day ASC
+	`, days)
+	defer rows.Close()
+	
+	var result []map[string]interface{}
+	for rows.Next() {
+		var day string
+		var requests, promptTokens, completionTokens int64
+		var cost float64
+		rows.Scan(&day, &requests, &promptTokens, &completionTokens, &cost)
+		result = append(result, map[string]interface{}{
+			"Date":              day,
+			"Requests":          requests,
+			"PromptTokens":      promptTokens,
+			"CompletionTokens":  completionTokens,
+			"TotalTokens":      promptTokens + completionTokens,
+			"Cost":              cost,
+		})
+	}
+	return result
 }
 
 func (h *AdminHandler) getRecentUsage(limit int) []map[string]interface{} {
