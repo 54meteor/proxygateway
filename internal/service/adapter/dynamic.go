@@ -47,18 +47,19 @@ func NewConfigLoader(db *storage.DB, yamlConfig *config.Config) *ConfigLoader {
 // Reload 从数据库重新加载配置
 func (cl *ConfigLoader) Reload() {
 	cl.mu.Lock()
-	defer cl.mu.Unlock()
 
 	dbModels, err := cl.db.ListAIModels()
 	if err != nil {
 		logger.Warn("Failed to load models from DB: %v, using YAML config", err)
 		cl.loadFromYAML()
+		cl.mu.Unlock()
 		return
 	}
 
 	if len(dbModels) == 0 {
 		logger.Info("No models in DB, using YAML config as fallback")
 		cl.loadFromYAML()
+		cl.mu.Unlock()
 		return
 	}
 
@@ -70,6 +71,9 @@ func (cl *ConfigLoader) Reload() {
 	}
 
 	logger.Info("Loaded %d models from database", len(cl.models))
+
+	cl.mu.Unlock()
+	// 通知必须在锁外进行，否则 notifyUpdate -> GetModels 会死锁
 	cl.notifyUpdate()
 }
 
